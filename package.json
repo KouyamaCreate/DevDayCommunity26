@@ -1,0 +1,11 @@
+{
+  "name": "devdaycommunity26",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "check:cloud": "node scripts/check-cloud.cjs"
+  },
+  "dependencies": {
+    "picocolors": "1.1.1"
+  }
+}
