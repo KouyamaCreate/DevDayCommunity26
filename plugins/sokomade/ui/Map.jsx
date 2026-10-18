@@ -3,6 +3,7 @@ import L from 'leaflet';
 import { createRoot } from 'react-dom/client';
 import 'leaflet/dist/leaflet.css';
 import { reportGrid } from './report-grid.mjs';
+import { googleReportOverlay } from './report-overlay.mjs';
 import { candidateLetter } from './presentation.mjs';
 import { Plus, Minus, Crosshair, House, Briefcase, Bed } from '@phosphor-icons/react';
 
@@ -58,7 +59,7 @@ export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, o
           { featureType: 'transit', stylers: [{ visibility: 'simplified' }] },
           { featureType: 'poi.park', stylers: [{ visibility: 'on' }] },
           { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#deedcf' }] },
-          { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#f1f3f2' }] },
+          { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#f7f8f7' }] },
           { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
           { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#7b8797' }] },
           { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#c9e8f6' }] },
@@ -136,9 +137,10 @@ export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, o
         add(labelOverlay(e.maps,e.map,halfway,chip));
       }
     }
-    if(layerVisible) for(const cell of reportGrid(workspace.reportLayer)) {
-      if(e.type==='google') add(new e.maps.Rectangle({map:e.map,bounds:cell.bounds,fillColor:'#da9224',fillOpacity:cell.opacity,strokeWeight:0,clickable:false,zIndex:0}));
-      else add(L.rectangle([[cell.bounds.south,cell.bounds.west],[cell.bounds.north,cell.bounds.east]],{fillColor:'#da9224',fillOpacity:cell.opacity,weight:0,interactive:false}).addTo(e.map));
+    if (layerVisible) {
+      const cells = reportGrid(workspace.reportLayer);
+      if (e.type === 'google' && cells.length) add(googleReportOverlay(e.maps, e.map, cells));
+      else for (const cell of cells) add(L.rectangle([[cell.bounds.south, cell.bounds.west], [cell.bounds.north, cell.bounds.east]], { fillColor:cell.color,fillOpacity:cell.opacity,weight:0,interactive:false }).addTo(e.map));
     }
     if(workspace.focus.type==='point') {
       const p=workspace.focus.point;

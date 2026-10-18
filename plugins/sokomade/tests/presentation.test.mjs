@@ -25,3 +25,12 @@ test('report grid preserves counts and fixed intensity, excludes clipped cells a
   assert.deepEqual(reportGrid({...layer,regions:[{city:'shibuya',status:'available'}]}),[]);
   assert.deepEqual(reportGrid({...layer,incidents:[]}),[]);assert.match(layerMessage({status:'unsupported'}),/未対応/);assert.match(layerMessage({status:'unavailable'}),/取得できません/);
 });
+
+test('report intensity uses fixed count thresholds rather than local minimum or maximum',()=>{
+  const counts=[1,4,5,9,10,19,20,200];
+  const layer={status:'partial',regions:[{city:'sf',status:'available'}],bounds:{south:37.6,north:37.9,west:-122.6,east:-122.3},incidents:counts.map((count,i)=>({lat:37.7+i*.01,lng:-122.42,count}))};
+  const cells=reportGrid(layer);
+  assert.deepEqual(cells.map(c=>c.count),counts);
+  assert.deepEqual(cells.map(c=>c.level),[0,0,1,1,2,2,3,3]);
+  assert.deepEqual(reportGrid({...layer,incidents:layer.incidents.slice(0,2)}),cells.slice(0,2));
+});
