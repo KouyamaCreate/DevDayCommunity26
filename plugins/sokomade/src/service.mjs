@@ -60,7 +60,7 @@ export class MapService {
     });
     return this.view(workspaceId);
   }
-  async move({ workspaceId, query, city, placeId, zoom = 14 }) {
+  async move({ workspaceId, query, city, placeId, zoom = 16 }) {
     invariant([!!query, !!city, !!placeId].filter(Boolean).length === 1, 'LOCATION_REQUIRED', '移動先の地域名か取得済み地点を1つ指定してください。');
     const state = this.sessions.get(workspaceId);
     this.invalidate(state);
