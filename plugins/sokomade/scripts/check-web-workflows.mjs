@@ -9,6 +9,8 @@ import { Google } from '../src/google.mjs';
 import { Reports } from '../src/reports.mjs';
 import { MapService } from '../src/service.mjs';
 import { ChatAgent } from '../src/chat.mjs';
+import { presentation } from '../ui/presentation.mjs';
+import { reportGrid } from '../ui/report-grid.mjs';
 import { publicError } from '../src/errors.mjs';
 const config = new Config({ env: await webEnvironment() });
 const sessions = new Sessions();
@@ -20,7 +22,8 @@ try {
   await service.layer({workspaceId});
   let w = (await service.view(workspaceId)).workspace;
   assert.equal(w.places.length,0); assert.equal(w.originId,null); assert.ok(w.reportLayer.regions.some(r=>r.status==='available'));
-  passed('initial-report-layer',{layerStatus:w.reportLayer.status,positions:w.reportLayer.incidents.length});
+  const grid=reportGrid(w.reportLayer);assert.ok(grid.length>0);assert.ok(grid.reduce((n,c)=>n+c.count,0)<=w.reportLayer.incidents.reduce((n,p)=>n+p.count,0));assert.equal(presentation(w).candidates.length,0);
+  passed('initial-report-layer',{layerStatus:w.reportLayer.status,positions:w.reportLayer.incidents.length,gridCells:grid.length});
   w = (await agent.send({workspaceId,message:'SFを見せて。表示範囲の公開報告について短く教えて。店や経路はまだ不要。'})).workspace;
   assert.equal(w.originId,null);assert.equal(w.routes.length,0);assert.equal(w.focus.type,'viewport');
   passed('natural-language-map-move',{city:w.city,reply:w.chatMessages.at(-1).text});
@@ -42,6 +45,7 @@ try {
     assert.ok(w.routes.some(r=>r.pairId===pair.id && r.leg==='out' && r.fromId===p.id));
     assert.ok(w.routes.some(r=>r.pairId===pair.id && r.leg==='back' && r.toId===p.id));
   }
+  const cardView=presentation(w);assert.equal(cardView.propertyMode,true);assert.equal(cardView.candidates.length,2);assert.equal(cardView.to.id,landmarks[2].id);
   passed('directed-commute-comparison',{pairs:w.routePairs.length,evaluations:w.walkEvaluations.map(({totalSeconds,status})=>({totalSeconds,status})),reply:w.chatMessages.at(-1).text});
   const routeIds=w.routes.map(r=>r.id);
   w = (await agent.send({workspaceId,message:'比較は残したまま、この表示範囲でスーパーを2軒探して。経路は更新しなくていい。'})).workspace;
@@ -51,6 +55,7 @@ try {
   await service.focus({workspaceId,point:{lat:35.6580,lng:139.7016}});
   w=(await service.analyze({workspaceId})).workspace;
   assert.equal(w.focusReport.comparable,false);assert.equal(w.focusReport.precision,'neighborhood');assert.ok(w.focusReport.areaCounts[0].area);assert.ok(w.reportLayer.areas.every(a=>a.geometry===null));
+  assert.deepEqual(reportGrid(w.reportLayer),[]);
   passed('tokyo-point-neighborhood',{area:w.focusReport.areaCounts[0].area,count:w.focusReport.areaCounts[0].count,period:w.focusReport.period.label});
   const london=(await service.resolve({workspaceId,lat:51.5,lng:-0.12,label:'London public test point'})).candidates[0];
   w=(await service.move({workspaceId,placeId:london.id})).workspace;

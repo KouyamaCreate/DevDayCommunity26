@@ -1,31 +1,35 @@
-import { useEffect, useRef, useState } from 'react';
-import { ArrowUp, CaretDown, ChatCircleDots } from '@phosphor-icons/react';
-import { sendMessage } from './bridge';
+import { useEffect, useState } from 'react';
+import { PaperPlaneRight, Minus, Plus, Sparkle, UserCircle, ClockCounterClockwise, MapPin } from '@phosphor-icons/react';
+import { sendMessage, isEmbedded } from './bridge';
 
-export function Consultation({ workspace, ai, onError }) {
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  const end = useRef(null);
-  const messages = workspace.chatMessages || [];
-  const last = messages.at(-1);
-  const busy = sending || workspace.chatBusy;
-  useEffect(() => { setText(''); setExpanded(false); }, [workspace.id]);
-  useEffect(() => { if (expanded) end.current?.scrollIntoView({ block: 'nearest' }); }, [messages.length, workspace.chatStatus, expanded]);
-  const submit = async value => {
-    if (!value.trim() || busy) return;
-    setText(''); setSending(true);
-    try { await sendMessage({ workspaceId: workspace.id, message: value.trim() }); }
-    catch (error) { setText(value); onError(error.message); }
-    finally { setSending(false); }
+export function Consultation({ workspace, ai, onError, children, scopeLabel }) {
+  const [text,setText]=useState('');
+  const [sending,setSending]=useState(false);
+  const [collapsed,setCollapsed]=useState(false);
+  const [history,setHistory]=useState(false);
+  const messages=workspace.chatMessages || [];
+  const user=messages.findLast(m=>m.role==='user');
+  const assistant=messages.findLast(m=>m.role==='assistant');
+  const busy=sending || workspace.chatBusy;
+  const summary=assistant?.text.split('\n\n')[0];
+  useEffect(()=>{setText('');setCollapsed(false);setHistory(false);},[workspace.id]);
+  const submit=async value=>{
+    if(!value.trim() || busy || isEmbedded)return;
+    setText('');setSending(true);setCollapsed(false);
+    try{await sendMessage({workspaceId:workspace.id,message:value.trim()});}
+    catch(error){setText(value);onError(error.message);}
+    finally{setSending(false);}
   };
-  const samples = workspace.originId ? ['もう少し近い店がいい', '遠回りは5分まで', '帰り道も比べて'] : workspace.city === 'sf' ? ['Union Squareから近くのバーガー店を、徒歩の往復で比べたい'] : ['渋谷駅から近くのバーガー店を、徒歩の往復で比べたい'];
-  return <section className="consultation" aria-label="地図に相談する">
-    {expanded && <div className="conversation-history" role="log" aria-label="相談の履歴">{messages.map(message => <div className={`conversation-message ${message.role} ${message.error ? 'failed' : ''}`} key={message.id}><span>{message.role === 'user' ? 'あなた' : '地図アシスタント'}</span><p>{message.text}</p></div>)}<div ref={end}/></div>}
-    <div className="consultation-inner">
-      {last?.role === 'assistant' && !expanded && !busy && <div className="latest-answer" aria-live="polite"><p>{last.text}</p></div>}
-      {busy ? <p className="consultation-status" role="status"><span className="activity-dot"/>{workspace.chatStatus || '相談内容を送信しています…'}</p> : !messages.length && <div className="suggestion-list">{samples.map(sample => <button type="button" key={sample} onClick={() => submit(sample)}>{sample}</button>)}</div>}
-      <div className="consultation-row"><button className={`conversation-toggle ${expanded ? 'active' : ''}`} disabled={!messages.length} aria-label={expanded ? '相談履歴を閉じる' : '相談履歴を開く'} aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? <CaretDown size={20}/> : <ChatCircleDots size={22}/>}</button><form onSubmit={event => { event.preventDefault(); submit(text); }}><input aria-label="地図への相談" placeholder="店や物件、行き帰りの道について相談する" value={text} onChange={event => setText(event.target.value)} maxLength={3000} disabled={busy}/><button className="send-consultation" aria-label="相談を送信" disabled={busy || !text.trim()}><ArrowUp size={20} weight="bold"/></button></form><span className="consultation-privacy">{ai?.configured === false ? 'AIの設定が必要です' : 'この相談中だけ保持'}</span></div>
-    </div>
+  return <section className={`conversation-panel ${collapsed?'collapsed':''}`} aria-label="地図と相談">
+    <div className="conversation-heading"><h1>地図と相談</h1><div>{messages.length>0 && !collapsed && <button className="icon-button" aria-label={history?'最新の結果に戻る':'相談履歴を表示'} aria-pressed={history} onClick={()=>setHistory(!history)}><ClockCounterClockwise size={20}/></button>}<button className="collapse-button" aria-label={collapsed?'相談窓を開く':'相談窓を小さくする'} aria-expanded={!collapsed} onClick={()=>setCollapsed(!collapsed)}>{collapsed?<Plus size={18}/>:<Minus size={18}/>}</button></div></div>
+    {!collapsed && <><div className="conversation-content">
+      {history?<div role="log" aria-label="相談履歴">{messages.map(m=><div key={m.id} className={`history-message ${m.role}`}><small>{m.role==='user'?'あなた':'地図アシスタント'}</small><p>{m.text}</p></div>)}</div>:<>
+        {user && <div className="message-row user-message"><UserCircle size={32} weight="fill"/><p>{user.text}</p></div>}
+        <div className="message-row assistant-message"><Sparkle size={27} weight="fill"/><p aria-live="polite">{busy?workspace.chatStatus || '相談内容を確認しています…':summary || '気になる場所を選んで、そのまま聞けます。'}</p></div>
+        {assistant && summary !== assistant.text && <button className="text-button answer-details" onClick={()=>setHistory(true)}>回答の全文を見る</button>}
+        {!user && !isEmbedded && <div className="suggestions"><button disabled={busy} onClick={()=>submit('いま見ている範囲の駅の周辺を見たい')}>駅の周辺を見たい</button><button disabled={busy} onClick={()=>submit('この辺で夕食のお店を探して。経路はまだ不要')}>この辺で夕食</button></div>}
+        {children}
+      </>}
+    </div><div className="composer-area">{isEmbedded?<p className="scope-note">条件の変更はCodexの会話へ。</p>:<form className="composer" onSubmit={e=>{e.preventDefault();submit(text);}}><textarea rows={user?1:2} aria-label="地図への相談" placeholder={user?'条件を追加して聞く…':'この辺について聞く…'} value={text} onChange={e=>setText(e.target.value)} maxLength={3000} disabled={busy} onKeyDown={e=>{if(e.key==='Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode!==229){e.preventDefault();submit(text);}}}/><button aria-label="相談を送信" disabled={busy || !text.trim()}><PaperPlaneRight size={22}/></button></form>}<p className="scope-note"><MapPin size={14} weight="fill"/>{scopeLabel || 'いま見ている範囲で相談できます'}{ai?.configured===false && <span>・AI未設定</span>}</p></div></>}
   </section>;
 }

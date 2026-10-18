@@ -128,3 +128,12 @@ test('global provider locations are not rejected by report-region bounds',async(
   const google=new Google({keys:async()=>({server:'test'})},{request:async()=>({status:'OK',results:[{place_id:'london',formatted_address:'London UK',geometry:{location:{lat:51.5,lng:-0.12},location_type:'APPROXIMATE'}}]})});
   assert.equal((await google.geocode('London UK','sf'))[0].lat,51.5);
 });
+
+test('a clicked point can become a walking endpoint without model-generated coordinates',async t=>{
+ const {service,id}=await setup(t);
+ await service.focus({workspaceId:id,point:{lat:37.80,lng:-122.44}});
+ const result=await service.resolve({workspaceId:id,fromFocus:true,role:'origin'});
+ assert.equal(result.candidates[0].lat,37.80);assert.equal(result.candidates[0].lng,-122.44);assert.equal(result.workspace.originId,result.candidates[0].id);
+ await service.focus({workspaceId:id,scope:'viewport'});
+ await assert.rejects(service.resolve({workspaceId:id,fromFocus:true}),{code:'FOCUS_REQUIRED'});
+});

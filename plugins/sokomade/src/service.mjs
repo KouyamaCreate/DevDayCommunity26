@@ -105,11 +105,16 @@ export class MapService {
     });
     return this.view(workspaceId);
   }
-  async resolve({ workspaceId, query, lat, lng, label, address, role = 'candidate' }) {
+  async resolve({ workspaceId, query, lat, lng, label, address, fromFocus = false, role = 'candidate' }) {
     const state = this.sessions.get(workspaceId);
     this.invalidate(state);
     const generation = state.operationGeneration;
     let places;
+    if (fromFocus) {
+      invariant(!query && lat === undefined && lng === undefined && state.focus.type === 'point', 'FOCUS_REQUIRED', '地図上で地点を選んでください。');
+      ({lat,lng} = state.focus.point);
+      label ||= '地図で選んだ地点';
+    }
     if (lat !== undefined || lng !== undefined) {
       const coordinate = validateWorldCoordinate({ lat, lng });
       places = [{ id: randomUUID(), name: label || '指定した地点', address: address || '', ...coordinate, source: 'user-coordinate', precision: 'user-provided', providerId: null, openingHours: null, priceLevel: null }];
