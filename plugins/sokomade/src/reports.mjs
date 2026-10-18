@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse } from 'csv-parse/sync';
 import iconv from 'iconv-lite';
+import { joinShibuyaAreas, shibuyaAreaAt, normalizeArea, visibleGeometry, boundaryMetadata } from './shibuya-boundaries.mjs';
 import { AppError } from './errors.mjs';
 import { fetchJSON } from './network.mjs';
 import { CITIES, routeReportIDs, distanceMeters, inBounds, intersectsBounds, validateBounds } from './spatial.mjs';
@@ -49,7 +50,7 @@ export function parseTokyoCSV(bytes) {
     if (!/^\d+$/.test(normalized)) throw new AppError('REPORT_INCOMPLETE', '警視庁の件数に未確定・欠損があるため、集計できません。');
     return Number(normalized);
   };
-  const result = rows.filter(r => r['市区町丁'].startsWith('渋谷区') && r['市区町丁'] !== '渋谷区' && !/合計|総計/.test(r['市区町丁'])).map(r => ({
+  const result = rows.filter(r => r['市区町丁'].startsWith('渋谷区') && r['市区町丁'] !== '渋谷区' && !/合計|総計|計$/.test(r['市区町丁'])).map(r => ({
     area: r['市区町丁'].normalize('NFKC'), total: number(r['総合計']),
     counts: { assault: number(r['粗暴犯暴行']) + number(r['粗暴犯傷害']), robbery: number(r['凶悪犯強盗']), theft: number(r['侵入窃盗計']) + number(r['非侵入窃盗計']) },
   }));
@@ -109,7 +110,7 @@ export class Reports {
     });
   }
   async tokyo() {
-    return this.cached('tokyo-latest', async () => {
+    return this.cached('tokyo-latest-v2', async () => {
       const request = async url => {
         let response;
         try { response = await this.fetchImpl(url, { signal: AbortSignal.timeout(20000) }); } catch { throw new AppError('UPSTREAM_UNAVAILABLE', '警視庁データに接続できません。'); }
@@ -124,32 +125,40 @@ export class Reports {
   }
   async layer(bounds, { categories = Object.keys(REPORT_CATEGORIES) } = {}) {
     validateBounds(bounds);
-    const regions = await Promise.all(Object.values(CITIES).filter(city => intersectsBounds(bounds, city.bounds)).map(async city => {
+    // 500m halo prevents a cropped viewport from removing nearby kernel weights.
+    const halo = 500 / 111320;
+    const dx = halo / Math.max(.1, Math.cos((bounds.south + bounds.north) / 2 * Math.PI / 180));
+    const sampleBounds = { south:Math.max(-85,bounds.south-halo),north:Math.min(85,bounds.north+halo),west:Math.max(-180,bounds.west-dx),east:Math.min(180,bounds.east+dx) };
+    const regions = await Promise.all(Object.values(CITIES).filter(city => intersectsBounds(sampleBounds, city.bounds)).map(async city => {
       try {
         const summary = await this.context(city.id, [], [], { categories });
         if (city.id === 'sf') {
           const source = await this.sf();
           const groups = new Map();
-          for (const incident of source.incidents.filter(p => inBounds(p, bounds) && p.categories.some(c => categories.includes(c)))) {
+          for (const incident of source.incidents.filter(p => inBounds(p, sampleBounds) && p.categories.some(c => categories.includes(c)))) {
             const key = `${incident.lat},${incident.lng}`;
             if (!groups.has(key)) groups.set(key, { id: key, lat: incident.lat, lng: incident.lng, count: 0 });
             groups.get(key).count++;
           }
           summary.incidents = [...groups.values()];
-          summary.visiblePublicReportCount = summary.incidents.reduce((n, p) => n + p.count, 0);
+          summary.visiblePublicReportCount = summary.incidents.filter(p=>inBounds(p,bounds)).reduce((n, p) => n + p.count, 0);
         }
-        // CSV totals have no geometry. Never invent point positions or a viewport total.
-        summary.areas = summary.areas?.map(a => ({ ...a, geometry: null }));
+        // Attach only name-matched, real 2020 reference polygons; never invent geometry.
+        if(city.id==='shibuya') {
+          summary.areas=joinShibuyaAreas(summary.areas || []).filter(a=>!a.geometry || visibleGeometry(a.geometry,bounds));
+          summary.boundaries=boundaryMetadata;
+          summary.unmatchedBoundaryAreas=summary.areas.filter(a=>!a.geometry).map(a=>a.area);
+        }
         return { ...summary, status: 'available', queryBounds: city.bounds, boundaryPrecision: 'query-window-not-jurisdiction', viewportCount: city.id === 'sf' ? undefined : null };
       } catch (error) {
         return { city: city.id, status: 'unavailable', incidents: [], areas: [], viewportCount: null, limitations: [error instanceof AppError ? error.message : '報告情報を取得できません。'] };
       }
     }));
     const available = regions.filter(r => r.status === 'available');
-    return { bounds, status: !regions.length ? 'unsupported' : !available.length ? 'unavailable' : 'partial',
+    return { bounds, sampleBounds, smoothingHaloMeters:500, status: !regions.length ? 'unsupported' : !available.length ? 'unavailable' : 'partial',
       regions, incidents: available.flatMap(r => r.incidents), areas: available.flatMap(r => r.areas || []),
       // We do not have jurisdiction/CSV polygons proving complete viewport coverage.
-      coverage: 'not-verified', limitations: [...REPORT_LIMITS, '地図全域のデータ網羅性は確認できません。情報がない場所を安全とは扱いません。', '渋谷の町丁目集計は境界データ未接続のため地図上の位置や範囲内合計に変換しません。'] };
+      coverage: 'not-verified', limitations: [...REPORT_LIMITS, '地図全域のデータ網羅性は確認できません。情報がない場所を安全とは扱いません。', '渋谷は町丁目全体の集計です。2020年の参考境界と集計区域の完全一致は未確認で、表示範囲内合計や沿道件数へ変換しません。'] };
   }
   async context(city, places, routes, { categories = ['assault', 'robbery', 'theft'], radiusMeters = 500 } = {}) {
     if (!categories.length || categories.some(c => !(c in REPORT_CATEGORIES))) throw new AppError('INVALID_CATEGORIES', '対象種別を選んでください。');
@@ -170,16 +179,18 @@ export class Reports {
         missingPositionRows: source.missingPositionRows, conflictingPositionReports: source.conflictingPositionReports };
     }
     const source = await this.tokyo();
-    const normalize = text => text.normalize('NFKC').replace(/[\s,、]/g, '').replace(/東京都|日本|Japan/gi, '');
+    const normalize = text => normalizeArea(text).replace(/[\s,、]/g, '').replace(/東京都|日本|Japan/gi, '');
     const summaries = places.map(place => {
       const address = normalize(place.address);
-      const area = source.areas.find(a => address.includes(normalize(a.area)));
+      const spatialArea=shibuyaAreaAt(place);
+      const area=source.areas.find(a=>spatialArea?normalizeArea(a.area)===spatialArea:address.includes(normalize(a.area)));
       return { placeId: place.id, area: area?.area || null, count: area ? categories.reduce((sum, category) => sum + area.counts[category], 0) : null,
+        boundaryBasis: spatialArea ? 'census-2020-reference' : 'address',
         counts: area ? Object.fromEntries(categories.map(c => [c, area.counts[c]])) : null };
     });
-    return { city, comparable: false, basis: 'neighborhood', precision: 'neighborhood', routeCounts: routes.map(r => ({ routeId: r.id, count: null })), areaCounts: summaries,
+    return { city, boundaries:boundaryMetadata, comparable: false, basis: 'neighborhood', precision: 'neighborhood', routeCounts: routes.map(r => ({ routeId: r.id, count: null })), areaCounts: summaries,
       areas: source.areas.map(a => ({ area: a.area, counts: Object.fromEntries(categories.map(c => [c, a.counts[c]])) })), incidents: [], period: source.period, categories,
       categoryLabels: categories.map(c => REPORT_CATEGORIES[c]), sourceURL: source.sourceURL, sourceName: source.sourceName, updatedAt: source.updatedAt, fetchedAt: source.fetchedAt, stale: source.stale,
-      limitations: [...REPORT_LIMITS, '町丁目単位の認知件数です。ルート沿道の件数比較には使用できません。', '同じ町丁目の物件には同じ地域情報を表示します。', '時刻帯による絞り込みや夜間リスクの推定は行っていません。'] };
+      limitations: [...REPORT_LIMITS, '町丁目単位の認知件数です。ルート沿道の件数比較には使用できません。', boundaryMetadata.limitation, '同じ町丁目の物件には同じ地域情報を表示します。', '時刻帯による絞り込みや夜間リスクの推定は行っていません。'] };
   }
 }

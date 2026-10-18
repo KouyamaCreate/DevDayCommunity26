@@ -85,11 +85,11 @@ test('stale search and layer responses cannot overwrite a new map; stale camera 
   await service.layer({workspaceId:id});releaseLayer();await old;
   assert.equal(sessions.snapshot(id).reportLayer.marker,'new');
 });
-test('report layer separates sparse public positions, unavailable sources, unsupported regions and geometry-free Tokyo totals', async () => {
+test('report layer separates sparse public positions, unavailable sources, unsupported regions and name-matched reference boundaries for Tokyo totals', async () => {
   const reports=new Reports();reports.sf=async()=>({incidents:[{id:'1',lat:37.78,lng:-122.42,categories:['theft']},{id:'2',lat:37.78,lng:-122.42,categories:['theft']}],period:{label:'90 days'}});
   reports.tokyo=async()=>({areas:[{area:'渋谷区神南1丁目',counts:{assault:1,robbery:2,theft:3}}],period:{label:'year'}});
   const sf=await reports.layer(CITIES.sf.bounds,{categories:['theft']});assert.equal(sf.incidents.length,1);assert.equal(sf.incidents[0].count,2);assert.equal(sf.regions[0].visiblePublicReportCount,2);assert.equal(sf.coverage,'not-verified');
-  const tokyo=await reports.layer(CITIES.shibuya.bounds);assert.equal(tokyo.incidents.length,0);assert.equal(tokyo.areas[0].geometry,null);assert.equal(tokyo.regions[0].viewportCount,null);
+  const tokyo=await reports.layer(CITIES.shibuya.bounds);assert.equal(tokyo.incidents.length,0);assert.equal(tokyo.areas[0].geometry.type,'Polygon');assert.equal(tokyo.regions[0].boundaries.year,2020);assert.equal(tokyo.regions[0].viewportCount,null);
   const other=await reports.layer(boundsAround({lat:51.5,lng:0}));assert.equal(other.status,'unsupported');
   reports.sf=async()=>{throw Error('offline');};assert.equal((await reports.layer(CITIES.sf.bounds)).status,'unavailable');
   assert.equal(JSON.stringify(mapContext({places:[],routes:[],report:null,reportLayer:sf})).includes('37.78'),false);
@@ -120,7 +120,7 @@ test('focus analysis retains route evidence and category changes refresh both in
   w=(await service.analyze({workspaceId:id})).workspace;
   assert.deepEqual(w.report.routeCounts,oldCounts);assert.equal(w.focusReport.areaCounts[0].count,2);
   w=(await service.conditions({workspaceId:id,categories:['robbery']})).workspace;
-  assert.deepEqual(w.conditions.categories,['robbery']);assert.ok(seen.some(c=>c.length===1&&c[0]==='robbery'));
+  assert.equal(w.focusReport,null);assert.deepEqual(w.conditions.categories,['robbery']);assert.ok(seen.some(c=>c.length===1&&c[0]==='robbery'));
 });
 
 test('global provider locations are not rejected by report-region bounds',async()=>{
