@@ -158,20 +158,31 @@ export class MapService {
       const results = places.map(p => ({ ...p, id: retained.find(old => p.providerId && old.providerId === p.providerId)?.id || p.id, role: 'search-result' }));
       const additions = results.filter((p, i) => !retained.some(old => old.id === p.id) && results.findIndex(other => other.id === p.id) === i);
       invariant(retained.length + additions.length <= 20, 'TOO_MANY_PLACES', '比較地点は20件までです。不要な地点を除いてください。');
+      const movedIds = new Set(retained.filter(old => results.some(p => p.id === old.id && (p.lat !== old.lat || p.lng !== old.lng))).map(p => p.id));
+      const removedRoutes = current.routes.some(r => movedIds.has(r.fromId) || movedIds.has(r.toId));
+      if (movedIds.size) {
+        current.routes = current.routes.filter(r => !movedIds.has(r.fromId) && !movedIds.has(r.toId));
+        current.routePairs = current.routePairs.filter(p => !movedIds.has(p.fromId) && !movedIds.has(p.toId));
+        current.selectedRoutes = Object.fromEntries(Object.entries(current.selectedRoutes).filter(([, id]) => current.routes.some(r => r.id === id)));
+        current.report = null;
+      }
       current.places = [...retained.map(old => { const fresh = results.find(p=>p.id===old.id); return fresh ? { ...old, ...fresh, role: old.role } : old; }), ...additions]; current.searchResultIds = [...new Set(results.map(p => p.id))];
       current.assessment = null;
       current.searchContext = { query, center: {lat:center.lat,lng:center.lng}, radiusMeters, openNow, fetchedAt: new Date().toISOString() };
       current.selectedPlaceId = results[0]?.id || current.selectedPlaceId;
       if (results.length) current.focus = { type: 'place', placeId: results[0].id };
+      if (movedIds.size) current.activePairId = current.routePairs.find(p => p.comparisonId === current.selectedPlaceId)?.id || null;
       current.notices = results.length ? [] : ['条件に合う候補が見つかりません。検索範囲や条件を変えてください。'];
+      if (removedRoutes) current.notices.push('地点の位置情報が更新されたため、その地点を通る経路を破棄しました。経路を再取得してください。');
     });
     return this.view(workspaceId);
   }
   async discover({ workspaceId, priority = 'balanced', maxExtraDistanceMeters = 300, ...search }) {
-    const generation = this.sessions.get(workspaceId).operationGeneration + 1;
+    const before = this.sessions.get(workspaceId);
+    const generation = before.operationGeneration + 1, assessmentGeneration = (before.assessmentGeneration || 0) + 1;
     await this.search({ workspaceId, ...search });
     const state = this.sessions.get(workspaceId);
-    invariant(state.operationGeneration === generation, 'STALE_RESULT', '新しい操作を優先したため、以前の検索からの提案を反映しませんでした。');
+    invariant(state.operationGeneration === generation && state.assessmentGeneration === assessmentGeneration, 'STALE_RESULT', '新しい操作を優先したため、以前の検索からの提案を反映しませんでした。');
     if (!state.searchResultIds.length) return this.view(workspaceId);
     return this.assess({ workspaceId, placeIds: [...state.searchResultIds], priority, maxExtraDistanceMeters, _showAll:true });
   }
@@ -259,6 +270,7 @@ export class MapService {
   }
   async conditions({ workspaceId, resetRoundTripLimit, ...changes }) {
     if (resetRoundTripLimit) changes.maxRoundTripMinutes = null;
+    if (changes.categories) changes.categories = [...new Set(changes.categories)];
     this.sessions.update(workspaceId, s => {
       s.conditions = { ...s.conditions, ...changes };
       s.assessment = null;

@@ -152,6 +152,7 @@ export class Reports {
       coverage: 'not-verified', limitations: [...REPORT_LIMITS, '地図全域のデータ網羅性は確認できません。情報がない場所を安全とは扱いません。', '渋谷の町丁目集計は境界データ未接続のため地図上の位置や範囲内合計に変換しません。'] };
   }
   async context(city, places, routes, { categories = ['assault', 'robbery', 'theft'], radiusMeters = 500 } = {}) {
+    categories = [...new Set(categories)];
     if (!categories.length || categories.some(c => !(c in REPORT_CATEGORIES))) throw new AppError('INVALID_CATEGORIES', '対象種別を選んでください。');
     if (city === 'sf') {
       const source = await this.sf();

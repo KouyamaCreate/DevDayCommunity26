@@ -186,3 +186,50 @@ test('a cross-region route cannot erase evidence for supported places or local r
     if(!supported) assert.equal(evidence.count,null);
   }
 });
+
+test('a newer standalone assessment supersedes a discover paused after search',async t=>{
+  const {service,id}=await setup(t);
+  const search=service.search.bind(service);let release,entered;
+  const gate=new Promise(r=>release=r),started=new Promise(r=>entered=r);
+  service.search=async args=>{const result=await search(args);entered();await gate;return result;};
+  const old=service.discover({workspaceId:id,query:'カフェ',priority:'fewer-reports'});
+  await started;
+  let latest;
+  try {latest=(await service.assess({workspaceId:id,priority:'nearby'})).workspace;} finally {release();}
+  await assert.rejects(old,{code:'STALE_RESULT'});
+  const actual=(await service.view(id)).workspace;
+  assert.deepEqual(actual.assessment,latest.assessment);assert.deepEqual(actual.mapView.command,latest.mapView.command);
+});
+
+test('duplicate categories count each published category once across conditions, analyze and direct reports',async t=>{
+  const {service,id}=await setup(t,'shibuya');
+  const found=(await service.search({workspaceId:id,query:'カフェ'})).workspace;
+  const report=await service.reports.context('shibuya',found.places,[],{categories:['theft','theft','assault']});
+  assert.equal(report.areaCounts[0].count,11);assert.deepEqual(report.categories,['theft','assault']);
+  for(const update of ['conditions','analyze']) {
+    await service[update]({workspaceId:id,categories:['theft','theft','assault']});
+    const w=(await service.assess({workspaceId:id})).workspace;
+    assert.deepEqual(w.conditions.categories,['theft','assault']);
+    assert.deepEqual(w.assessment.items[0].evidence.categories,['theft','assault']);
+    assert.equal(w.assessment.items[0].evidence.count,11);
+  }
+});
+
+test('refreshing a cafe position discards only routes using its old coordinates',async t=>{
+  const {service,id}=await setup(t);
+  let w=(await service.search({workspaceId:id,query:'カフェ'})).workspace;
+  const [a,b,c]=w.searchResultIds;
+  const work=(await service.resolve({workspaceId:id,lat:37.79,lng:-122.42,label:'Work'})).candidates[0];
+  w=(await service.compare({workspaceId:id,pairs:[{fromId:a,toId:b},{fromId:c,toId:work.id}]})).workspace;
+  const removed=w.routes.find(r=>r.fromId===a).id;
+  const unaffected=w.routes.filter(r=>r.fromId===c||r.toId===c);
+  const original=service.google.search;
+  service.google.search=async(...args)=>(await original(...args)).map((p,i)=>i===0?{...p,lat:p.lat+0.001}:p);
+  w=(await service.search({workspaceId:id,query:'カフェ'})).workspace;
+  assert.equal(w.places.find(p=>p.id===a).lat,37.775+0.001);
+  assert.deepEqual(w.routes,unaffected);
+  assert.equal(w.routePairs.length,1);assert.equal(w.routePairs[0].fromId,c);
+  assert.ok(Object.values(w.selectedRoutes).every(id=>unaffected.some(r=>r.id===id)));
+  assert.equal(w.report,null);assert.equal(w.activePairId,null);
+  await assert.rejects(service.assess({workspaceId:id,routeIds:[removed]}),{code:'ROUTE_NOT_FOUND'});
+});
