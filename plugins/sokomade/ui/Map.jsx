@@ -1,31 +1,33 @@
-import { useEffect, useRef, useState } from 'react';
+import { createElement, useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import { createRoot } from 'react-dom/client';
 import 'leaflet/dist/leaflet.css';
 import { reportGrid } from './report-grid.mjs';
 import { candidateLetter } from './presentation.mjs';
-import { Plus, Minus, Crosshair } from '@phosphor-icons/react';
+import { Plus, Minus, Crosshair, House, Briefcase, Bed } from '@phosphor-icons/react';
 
 let googlePromise;
 function loadGoogle(key) {
   if (window.google?.maps?.Map) return Promise.resolve(window.google.maps);
   if (!googlePromise) googlePromise = new Promise((resolve, reject) => {
-    window.__sokomadeGoogleReady = () => resolve(window.google.maps);
-    window.gm_authFailure = () => { googlePromise = null; reject(new Error('地図のAPIキー・参照元制限・請求設定を確認してください。')); };
+    const timeout = setTimeout(() => { googlePromise = null; reject(new Error('地図の読み込みに時間がかかっています。ネットワークを確認してページを再読み込みしてください。')); }, 20000);
+    window.__sokomadeGoogleReady = () => { clearTimeout(timeout); resolve(window.google.maps); };
+    window.gm_authFailure = () => { clearTimeout(timeout); googlePromise = null; reject(new Error('地図のAPIキー・参照元制限・請求設定を確認してください。')); };
     const script = document.createElement('script');
     const params = new URLSearchParams({ key, callback: '__sokomadeGoogleReady', v: 'weekly', loading: 'async', language: 'ja' });
     script.src = `https://maps.googleapis.com/maps/api/js?${params}`;
     script.referrerPolicy = 'strict-origin-when-cross-origin';
-    script.onerror = () => { googlePromise = null; reject(new Error('地図サービスに接続できません。ネットワークを確認してください。')); };
+    script.onerror = () => { clearTimeout(timeout); googlePromise = null; reject(new Error('地図サービスに接続できません。ネットワークを確認してください。')); };
     document.head.append(script);
   });
   return googlePromise;
 }
 const COLORS = ['#0969f5', '#9461dc'];
-function labelOverlay(maps,map,position,element) {
+function labelOverlay(maps,map,position,element,dispose) {
   const overlay=new maps.OverlayView();
   overlay.onAdd=()=>{overlay.getPanes().floatPane.append(element);maps.OverlayView.preventMapHitsAndGesturesFrom(element);};
   overlay.draw=()=>{const p=overlay.getProjection()?.fromLatLngToDivPixel(new maps.LatLng(position));if(p){element.style.left=`${p.x}px`;element.style.top=`${p.y}px`;}};
-  overlay.onRemove=()=>element.remove();
+  overlay.onRemove=()=>{element.remove();if(dispose)queueMicrotask(dispose);};
   overlay.setMap(map);return overlay;
 }
 export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, onFocus, bothPaths = false, layerVisible = true, onInspect }) {
@@ -33,6 +35,7 @@ export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, o
   const engine = useRef(null);
   const overlays = useRef([]);
   const fitKey = useRef('');
+  const sizeBucket = useRef(null);
   const currentSelect = useRef(onSelect);
   const current = useRef({ workspace, onViewport, onFocus });
   const appliedCommand = useRef(0);
@@ -44,13 +47,13 @@ export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, o
   useEffect(() => {
     let cancelled = false;
     setError('');
-    const resize = new ResizeObserver(() => { const e = engine.current; if (e?.type === 'google') e.maps.event.trigger(e.map, 'resize'); else e?.map.invalidateSize(); });
+    const resize = new ResizeObserver(() => { const node=container.current;if(!node)return;const width=node.clientWidth; const bucket=width>1000?'desktop':width>700?'tablet':'mobile'; if(sizeBucket.current!==bucket){sizeBucket.current=bucket;fitKey.current='';if(engine.current)setReady(v=>v+1);} const e = engine.current; if (e?.type === 'google') e.maps.event.trigger(e.map, 'resize'); else e?.map.invalidateSize(); });
     resize.observe(container.current);
     const start = async () => {
       if (browserKey) {
         const maps = await loadGoogle(browserKey);
         if (cancelled) return;
-        engine.current = { type: 'google', maps, map: new maps.Map(container.current, { center: workspace.mapView?.center || city.center, zoom: workspace.mapView?.zoom || 14, disableDefaultUI: true, clickableIcons: false, gestureHandling: 'greedy', mapTypeControl: false, styles: [
+        engine.current = { type: 'google', maps, map: new maps.Map(container.current, { center: workspace.mapView?.center || city.center, zoom: workspace.mapView?.zoom || 16, disableDefaultUI: true, clickableIcons: false, gestureHandling: 'greedy', mapTypeControl: false, styles: [
           { featureType: 'poi', stylers: [{ visibility: 'off' }] },
           { featureType: 'transit', stylers: [{ visibility: 'simplified' }] },
           { featureType: 'poi.park', stylers: [{ visibility: 'on' }] },
@@ -62,7 +65,7 @@ export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, o
           { featureType: 'administrative', elementType: 'labels.text.fill', stylers: [{ color: '#7b8797' }] },
         ] }) };
       } else {
-        const map = L.map(container.current, { zoomControl: false, attributionControl: true, scrollWheelZoom: false }).setView([workspace.mapView?.center.lat || city.center.lat, workspace.mapView?.center.lng || city.center.lng], workspace.mapView?.zoom || 14);
+        const map = L.map(container.current, { zoomControl: false, attributionControl: true, scrollWheelZoom: false }).setView([workspace.mapView?.center.lat || city.center.lat, workspace.mapView?.center.lng || city.center.lng], workspace.mapView?.zoom || 16);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', maxZoom: 19 }).addTo(map);
         engine.current = { type: 'leaflet', map };
       }
@@ -108,8 +111,10 @@ export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, o
     overlays.current = [];
     const add = item => { overlays.current.push(item); return item; };
     // Google-provided places/routes are never placed on a non-Google basemap.
-    const places = workspace.places.filter(p => e.type === 'google' || !p.source?.startsWith('google'));
     const propertyMode = workspace.places.find(p=>p.id===workspace.selectedPlaceId)?.role === 'property';
+    const propertyPairs = workspace.routePairs.filter(pair=>workspace.places.some(p=>p.id===pair.comparisonId && p.role==='property'));
+    const contextIds = new Set(propertyPairs.flatMap(p=>[p.fromId,p.toId]));
+    const places = workspace.places.filter(p => (e.type === 'google' || !p.source?.startsWith('google')) && (!propertyMode || !propertyPairs.length || contextIds.has(p.id)));
     const routes = workspace.routes.filter(r => r.leg === workspace.leg && r.extraSeconds <= (workspace.conditions?.maxDetourMinutes ?? 5) * 60 && e.type === 'google' && (bothPaths && propertyMode ? workspace.places.some(p=>p.id===r.destinationId && p.role==='property') && r.id === workspace.selectedRoutes[`${r.destinationId}:${r.leg}`] : r.destinationId === workspace.selectedPlaceId && (!propertyMode || r.id === workspace.selectedRoutes[`${r.destinationId}:${r.leg}`])));
     const selectedId = workspace.selectedRoutes[`${workspace.selectedPlaceId}:${workspace.leg}`] || routes[0]?.id;
     const bounds = [];
@@ -125,7 +130,7 @@ export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, o
         line.addListener('click', () => currentSelect.current({ routeId: route.id, leg: route.leg }));
         const halfway = path[Math.floor(path.length / 2)];
         const chip=document.createElement('button');chip.className=`map-route-label ${i && !propertyMode?'alternate':''}`;
-        chip.textContent=`徒歩 ${route.minutes}分${route.extraSeconds>0?` ＋${route.extraMinutes}分`:''}`;
+        chip.textContent=`徒歩 ${route.minutes}分${route.extraSeconds>0?` ＋${route.extraSeconds<60?'1分未満':`${route.extraMinutes}分`}`:''}`;
         chip.setAttribute('aria-label',`${route.minutes}分のルートを選択`);
         chip.onclick=()=>currentSelect.current({placeId:route.destinationId,routeId:route.id,leg:route.leg});
         add(labelOverlay(e.maps,e.map,halfway,chip));
@@ -146,15 +151,25 @@ export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, o
       } else add(L.circleMarker([p.lat,p.lng],{radius:7,color:'#fff',weight:3,fillColor:COLORS[0],fillOpacity:1}).addTo(e.map).bindTooltip('選んだ地点'));
     }
     for (const place of places) {
-      const origin = place.id === workspace.originId;
+      const origin = !propertyMode && place.id === workspace.originId;
       const selected = place.id === workspace.selectedPlaceId;
+      const work = propertyMode && propertyPairs.some(p=>p.toId===place.id && place.role!=='property');
+      const Icon = place.role==='property'?House:work?Briefcase:/hotel|ホテル|宿泊/i.test(place.name)?Bed:null;
       if (origin || selected) bounds.push(place);
       if (e.type === 'google') {
-        const marker = add(new e.maps.Marker({ map: e.map, position: place, title: `${place.name}${origin ? '（出発地）' : ''}`, label: { text: origin ? '発' : candidateLetter(workspace,place.id) || String(workspace.places.filter(p => p.id !== workspace.originId).findIndex(p => p.id === place.id) + 1), color: '#fff', fontWeight: '700', fontSize: '12px' }, icon: { path: e.maps.SymbolPath.CIRCLE, scale: selected || origin ? 15 : 11, fillColor: origin ? '#34445c' : selected ? '#0969f5' : '#7b8697', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 3 }, zIndex: 20 }));
+        const marker = add(new e.maps.Marker({ map: e.map, position: place, title: `${place.name}${origin ? '（出発地）' : ''}`, label: Icon ? undefined : { text: origin ? '発' : candidateLetter(workspace,place.id) || String(workspace.places.filter(p => p.id !== workspace.originId).findIndex(p => p.id === place.id) + 1), color: '#fff', fontWeight: '700', fontSize: '12px' }, icon: { path: e.maps.SymbolPath.CIRCLE, scale: selected || origin || work ? 18 : 14, fillColor: origin || work ? '#34445c' : selected ? '#0969f5' : '#7b8697', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 3 }, zIndex: 20 }));
+        if(Icon) {
+          const glyph=document.createElement(origin?'span':'button');glyph.className='map-place-icon';glyph.setAttribute('aria-label',place.name);
+          if(!origin)glyph.onclick=()=>currentSelect.current({placeId:place.id});
+          const root=createRoot(glyph);root.render(createElement(Icon,{size:21,weight:'fill',color:'#fff'}));
+          add(labelOverlay(e.maps,e.map,place,glyph,()=>root.unmount()));
+        }
         if (!origin) marker.addListener('click', () => currentSelect.current({ placeId: place.id }));
         if (selected || origin || workspace.routePairs.some(p=>p.fromId===place.id || p.toId===place.id)) {
-          const label = add(new e.maps.Marker({ map: e.map, position: place, title: place.name, label: { text: place.name.length > 17 ? place.name.slice(0, 16) + '…' : place.name, color: '#263247', fontSize: '13px', fontWeight: '600' }, icon: { path: e.maps.SymbolPath.CIRCLE, scale: 0, labelOrigin: new e.maps.Point(0, 34) }, zIndex: 21 }));
-          if (!origin) label.addListener('click', () => currentSelect.current({ placeId: place.id }));
+          const label=document.createElement(origin?'span':'button');label.className='map-place-name';
+          label.textContent=`${candidateLetter(workspace,place.id) || ''} ${place.name.length > 17 ? place.name.slice(0,16)+'…' : place.name}`.trim();
+          if(!origin)label.onclick=()=>currentSelect.current({placeId:place.id});
+          add(labelOverlay(e.maps,e.map,place,label));
         }
       } else {
         const marker = add(L.circleMarker([place.lat, place.lng], { radius: selected || origin ? 11 : 8, color: '#fff', weight: 3, fillColor: origin ? '#34445c' : selected ? '#0969f5' : '#7b8697', fillOpacity: 1 }).addTo(e.map));
@@ -184,8 +199,8 @@ export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, o
     userInteraction.current = true;
     const e = engine.current;
     if (!e) return;
-    if (e.type === 'google') { e.map.setCenter(city.center); e.map.setZoom(14); }
-    else e.map.setView([workspace.mapView?.center.lat || city.center.lat, workspace.mapView?.center.lng || city.center.lng], workspace.mapView?.zoom || 14);
+    if (e.type === 'google') { e.map.setCenter(city.center); e.map.setZoom(16); }
+    else e.map.setView([workspace.mapView?.center.lat || city.center.lat, workspace.mapView?.center.lng || city.center.lng], workspace.mapView?.zoom || 16);
   };
-  return <div className="map-area"><div className="map-surface" ref={container} onPointerDown={() => { userInteraction.current = true; }} onWheel={() => { userInteraction.current = true; }} onKeyDown={() => { userInteraction.current = true; }} role="region" aria-label={`表示中の地図。${workspace.leg === 'out' ? '行き' : '帰り'}を表示中`}/>{error && <div className="map-error" role="alert">{error}</div>}<div className="map-controls"><button aria-label="地図を拡大" onClick={() => zoom(1)}><Plus size={19}/></button><button aria-label="地図を縮小" onClick={() => zoom(-1)}><Minus size={19}/></button><button aria-label="地域全体を表示" onClick={reset}><Crosshair size={19}/></button></div><div className="map-caption">{reportCity === 'sf' ? '濃淡は約250m区画の公開位置の件数。無着色は安全を意味しません' : reportCity === 'shibuya' ? '報告情報は町丁目単位です。沿道の件数は比較しません' : '報告情報は取得した範囲だけ表示します'}</div></div>;
+  return <div className="map-area"><div className="map-surface" ref={container} onPointerDown={() => { userInteraction.current = true; }} onWheel={() => { userInteraction.current = true; }} onKeyDown={() => { userInteraction.current = true; }} role="region" aria-busy={!ready && !error} aria-label={`表示中の地図。${workspace.leg === 'out' ? '行き' : '帰り'}を表示中`}/>{!ready && !error && <div className="map-loading" role="status">地図を読み込んでいます…</div>}{error && <div className="map-error" role="alert">{error}</div>}<div className="map-controls"><button aria-label="地図を拡大" onClick={() => zoom(1)}><Plus size={19}/></button><button aria-label="地図を縮小" onClick={() => zoom(-1)}><Minus size={19}/></button><button aria-label="地域全体を表示" onClick={reset}><Crosshair size={19}/></button></div><div className="map-caption">{reportCity === 'sf' ? '濃淡は約250m区画の公開位置の件数。無着色は安全を意味しません' : reportCity === 'shibuya' ? '報告情報は町丁目単位です。沿道の件数は比較しません' : '報告情報は取得した範囲だけ表示します'}</div></div>;
 }

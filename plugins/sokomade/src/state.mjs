@@ -12,7 +12,7 @@ export class Sessions {
     if (!CITIES[city]) throw new AppError('INVALID_CITY', '渋谷またはSFを選んでください。');
     this.sweep();
     const id = randomUUID();
-    const state = { id, city, version: 0, createdAt: this.now(), touchedAt: this.now(), places: [], originId: null, selectedPlaceId: null, leg: 'out', routes: [], selectedRoutes: {}, report: null, notices: [], busy: false, contextGeneration: 0, operationGeneration: 0, layerGeneration: 0, mapView: { center: { ...CITIES[city].center }, zoom: 14, bounds: boundsAround(CITIES[city].center), revision: 0, command: null }, focus: { type: 'viewport' }, comparisonIds: [], searchResultIds: [], routePairs: [], activePairId: null, conditions: defaultConditions(), reportLayer: null, chatMessages: [], chatBusy: false, chatStatus: '', aiHistory: [], chatController: null };
+    const state = { id, city, version: 0, createdAt: this.now(), touchedAt: this.now(), places: [], originId: null, selectedPlaceId: null, leg: 'out', routes: [], selectedRoutes: {}, report: null, notices: [], busy: false, contextGeneration: 0, operationGeneration: 0, layerGeneration: 0, mapView: { center: { ...CITIES[city].center }, zoom: 16, bounds: boundsAround(CITIES[city].center), revision: 0, command: null }, focus: { type: 'viewport' }, comparisonIds: [], searchResultIds: [], routePairs: [], activePairId: null, conditions: defaultConditions(), reportLayer: null, chatMessages: [], chatBusy: false, chatStatus: '', aiHistory: [], chatController: null };
     state.assessment = null; state.searchContext = null; state.assessmentGeneration = 0;
     this.items.set(id, state); return state;
   }

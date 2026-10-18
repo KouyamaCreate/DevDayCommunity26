@@ -55,4 +55,4 @@ npm run test:workflows:live --prefix plugins/sokomade
 
 既存のCloud環境の依存確認は`npm ci && npm run check:cloud`で実行できます。
 
-UIの目標は[閲覧](docs/design/reference/01-browse.png)・[帰路](docs/design/reference/02-return-to-hotel.png)・[物件比較](docs/design/reference/03-property-and-commute.png)の3枚です。[視覚QA](design-qa.md)はブラウザ操作の権限ブロックにより未完了です。
+UIの目標は[閲覧](docs/design/reference/01-browse.png)・[帰路](docs/design/reference/02-return-to-hotel.png)・[物件比較](docs/design/reference/03-property-and-commute.png)の3枚です。Chromeで3場面の実画面操作と参照画像比較を完了しました。[視覚QA](design-qa.md)と[確認画像](docs/design/verification/)を参照してください。

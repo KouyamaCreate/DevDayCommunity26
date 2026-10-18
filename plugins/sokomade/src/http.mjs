@@ -30,6 +30,7 @@ export async function startHTTP({ service, config, sessions, port = 0, chat }) {
         response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' https://maps.googleapis.com https://maps.gstatic.com https://*.googleapis.com https://*.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.google.com https://tile.openstreetmap.org; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.googleapis.com https://*.google.com https://*.gstatic.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" });
         response.end(html.replace('/*__BOOTSTRAP__*/', `window.__SOKOMADE__=${JSON.stringify({ mode: 'browser', token })};`)); return;
       }
+      if (request.method === 'GET' && url.pathname === '/favicon.ico') { response.writeHead(204, { 'Cache-Control': 'public, max-age=86400' }); response.end(); return; }
       if (!sameToken(request.headers.authorization?.replace(/^Bearer /, ''), token)) return json(401, { error: { code: 'UNAUTHORIZED', message: 'ページを開き直してください。' } });
       if (request.method === 'GET' && url.pathname === '/api/config') return json(200, await config.status());
       if (request.method === 'POST' && url.pathname === '/api/config') return json(200, await config.save(await readBody(request)));

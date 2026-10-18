@@ -18,6 +18,7 @@ test('HTTP rejects external origins, unknown methods, oversized input and missin
  const html=await(await fetch(base)).text(); const token=html.match(/"token":"([a-f0-9]+)"/)[1];
  const headers={'Authorization':`Bearer ${token}`,'Content-Type':'application/json'};
  assert.equal((await fetch(`${base}/api/config`)).status,401);
+ assert.equal((await fetch(`${base}/favicon.ico`)).status,204);
  assert.equal((await fetch(`${base}/api/config`,{headers:{...headers,Origin:'https://evil.example'}})).status,403);
  const post=body=>fetch(`${base}/api/action`,{method:'POST',headers,body:JSON.stringify(body)});
  assert.equal((await post({action:'constructor',args:{}})).status,400);
