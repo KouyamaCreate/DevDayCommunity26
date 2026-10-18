@@ -1,0 +1,42 @@
+{
+  "verifiedAt": "2026-10-18T07:10:47.206Z",
+  "metadata": {
+    "center": {
+      "lat": 35.658034,
+      "lng": 139.701636
+    },
+    "radius": 1000,
+    "fetchedAt": "2026-10-18T06:54:03.951194+00:00",
+    "requestCount": 372,
+    "truncatedCells": 1,
+    "poiCount": 19687,
+    "buildingCount": 7069,
+    "matchedCount": 18673,
+    "unassignedCount": 1014,
+    "evaluableCount": 3297,
+    "geographyFetchedAt": "2026-10-18T06:54:41.140Z",
+    "geometrySource": "国土地理院ベクトルタイル提供実験"
+  },
+  "evaluationCount": 3297,
+  "rubric": "shibuya-environment-v2",
+  "timeOfDay": false,
+  "brightness": "safety score only",
+  "scoreRange": [
+    21,
+    74
+  ],
+  "meanScore": 41,
+  "checks": {
+    "build": "passed",
+    "unitTests": 5,
+    "apiGuards": "passed",
+    "facilitySearch": "passed",
+    "browserDevelopment": "passed",
+    "browserProduction": "passed",
+    "mobileLayout": "passed",
+    "mapPicking": "passed",
+    "cameraToggle": "passed",
+    "allMatchedBuildingsEvaluated": true,
+    "secretsWrittenToFiles": false
+  }
+}

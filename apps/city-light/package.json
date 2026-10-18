@@ -1,0 +1,38 @@
+{
+  "name": "city-light",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env server/index.mjs",
+    "build": "node scripts/prepare-crime.mjs && node scripts/prepare-render.mjs && node scripts/prepare-site.mjs && tsc --noEmit && VITE_SHARED_SITE=1 vite build",
+    "start": "NODE_ENV=production node --env-file-if-exists=.env server/index.mjs",
+    "data:fetch": "python3 scripts/fetch-data.py && node scripts/fetch-buildings.mjs && node scripts/prepare-data.mjs",
+    "data:prepare": "node scripts/prepare-data.mjs",
+    "evaluate": "node --env-file-if-exists=.env scripts/evaluate.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "build:local": "node scripts/prepare-crime.mjs && node scripts/prepare-render.mjs && tsc --noEmit && vite build",
+    "crime:fetch": "python3 scripts/fetch-crime.py && node scripts/prepare-crime.mjs",
+    "crime:prepare": "node scripts/prepare-crime.mjs"
+  },
+  "dependencies": {
+    "@mapbox/vector-tile": "^3.0.0",
+    "@navaramap/three": "0.2.1",
+    "@navaramap/three-default-descs": "0.2.1",
+    "@navaramap/three-default-plugin": "0.2.1",
+    "@turf/turf": "^7.3.0",
+    "dotenv": "^17.0.0",
+    "express": "^5.1.0",
+    "pbf": "^5.1.2",
+    "postprocessing": "^6.38.0",
+    "three": "^0.183.0",
+    "topojson-client": "3.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/three": "^0.183.0",
+    "playwright": "^1.56.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0"
+  }
+}

@@ -1,0 +1,13 @@
+import fs from 'node:fs';import {createHash} from 'node:crypto';import {decisionPayload,parseDecision,RUBRIC} from './decisions.mjs';
+export const fingerprint=b=>createHash('sha256').update(JSON.stringify({rubric:RUBRIC,address:b.address,method:b.method,pois:b.pois})).digest('hex');
+export function loadCache(){try{return JSON.parse(fs.readFileSync('data/evaluations.json','utf8'))}catch{return{}}}
+export async function evaluateBatch(buildings,key){
+ const base=decisionPayload(buildings[0]);const questions=buildings.flatMap((b,i)=>decisionPayload(b).questions.map(q=>({...q,name:`b${i}_${q.name}`,instructions:`対象は buildingKey=b${i} の建物のみ。他の建物の施設を混ぜない。${q.instructions}`})));
+ const input=JSON.stringify({task:JSON.parse(base.input).task,rubric:RUBRIC,missing:JSON.parse(base.input).missing,buildings:buildings.map((b,i)=>({buildingKey:`b${i}`,address:b.address,assignment:b.method,facilities:b.pois.map(p=>({name:p.name,category:p.category,address:p.address,level:typeof p.level==='string'?p.level:'不明'}))}))});
+ let response;for(let attempt=0;attempt<9;attempt++){try{response=await fetch('https://api.openai.com/v1/decisions',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({model:'gpt-6-luna',input,questions}),signal:AbortSignal.timeout(90000)});}catch(e){if(attempt===8)throw new Error('Decisions APIへの接続に失敗しました。時間を置いて再試行してください。');await new Promise(r=>setTimeout(r,8000));continue}if(response.status!==429)break;const retry=Math.min(60,Number(response.headers.get('retry-after'))||Math.max(8,5*attempt));console.log('Rate limit: backing off '+retry+' seconds');await response.arrayBuffer();await new Promise(r=>setTimeout(r,retry*1000));}
+
+ if(!response.ok){const e=await response.json().catch(()=>({}));throw new Error(`Decisions API: HTTP ${response.status} (${e.error?.code||e.error?.type||'request_failed'})`)}
+ const raw=await response.json();return buildings.map((b,i)=>{const answers=raw.answers?.filter(a=>a.name?.startsWith(`b${i}_`)).map(a=>({...a,name:a.name.slice(`b${i}_`.length)}));try{return{...parseDecision({answers}),buildingId:b.id,inputHash:fingerprint(b),requestId:response.headers.get('x-request-id')||raw.id||null,model:raw.model||'gpt-6-luna',facilityCount:b.pois.length}}catch(e){return{buildingId:b.id,error:e.message}}});
+}
+export function validCache(cache,buildings){const byId=new Map(buildings.map(b=>[b.id,b]));return Object.fromEntries(Object.entries(cache).filter(([,v])=>byId.has(v.buildingId)&&v.inputHash===fingerprint(byId.get(v.buildingId))))}
+export function saveCache(cache){fs.writeFileSync('data/evaluations.json.tmp',JSON.stringify(cache,null,2));fs.renameSync('data/evaluations.json.tmp','data/evaluations.json')}

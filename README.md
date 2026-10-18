@@ -57,3 +57,16 @@ npm run test:workflows:live --prefix plugins/sokomade
 既存のCloud環境の依存確認は`npm ci && npm run check:cloud`で実行できます。
 
 UIの目標は[閲覧](docs/design/reference/01-browse.png)・[帰路](docs/design/reference/02-return-to-hotel.png)・[物件比較](docs/design/reference/03-property-and-commute.png)の3枚です。Chromeで3場面の実画面操作と参照画像比較を完了しました。[視覚QA](design-qa.md)と[確認画像](docs/design/verification/)を参照してください。
+
+## CITY LIGHT（渋谷の2.5Dマップ）
+
+[apps/city-light](apps/city-light/README.md) は、渋谷駅から半径1kmの建物を施設評価の明るさで探索するWebアプリです。施設記録のない建物は警視庁の町丁目別犯罪統計で補完し、地域参考値として区別して表示します。保存済みデータを含み、表示・テスト・ビルドにAPIキーは不要です。
+
+Node.js 22.22以上で、リポジトリのルートから実行します。
+
+```sh
+npm --prefix apps/city-light ci
+npm --prefix apps/city-light run dev
+```
+
+ブラウザで <http://127.0.0.1:4317> を開きます。出典、補完方法、再評価、静的配信用ビルドの手順はアプリのREADMEを参照してください。

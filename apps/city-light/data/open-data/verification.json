@@ -1,0 +1,25 @@
+{
+  "comparisonAreas": 284,
+  "excluded": [
+    {
+      "id": "131030310",
+      "name": "港区‐",
+      "reason": "no-exact-crime-town-name"
+    },
+    {
+      "id": "13110026004",
+      "name": "目黒区八雲四丁目",
+      "reason": "no-exact-crime-town-name"
+    }
+  ],
+  "assignedBuildings": 7063,
+  "fallbackBuildings": 3770,
+  "unmatched": [
+    "gsi-16-58198-25811-1367",
+    "gsi-16-58198-25813-72",
+    "gsi-16-58198-25813-1363",
+    "gsi-16-58199-25811-1030",
+    "gsi-16-58199-25811-1036",
+    "gsi-16-58199-25811-1045"
+  ]
+}
