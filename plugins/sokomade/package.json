@@ -13,7 +13,8 @@
     "package": "node scripts/package-plugin.mjs",
     "test:workflows:live": "node scripts/check-web-workflows.mjs",
     "test:cafes:live": "node scripts/check-cafe-workflows.mjs",
-    "test:cafes:agent": "node scripts/check-cafe-workflows.mjs --agent-fixtures"
+    "test:cafes:agent": "node scripts/check-cafe-workflows.mjs --agent-fixtures",
+    "test:consultations:live": "node scripts/check-consultation-workflows.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.0.1",

@@ -70,4 +70,7 @@ npm run check --prefix plugins/sokomade
 # 以下は明示的な実API検証。従量料金が発生します
 npm run test:cafes:agent --prefix plugins/sokomade # OpenAI実接続、店舗・報告は検証用サンプル
 npm run test:cafes:live --prefix plugins/sokomade  # Google・OpenAI・公開報告を実接続
+npm run test:consultations:live --prefix plugins/sokomade # SF・渋谷のカフェ/経路/物件、計6相談を実接続
 ```
+
+`test:consultations:live`は自然言語の依頼から実エージェントを動かし、候補・向き付き徒歩経路・物件住所に対する共通評価と、回答中の件数・期間・出典を確認します。公開報告はディスクキャッシュを使わず取得し、物件ケースは公開施設の住所を仮の検討住所として使います。取得時点の全ケース成功を保証するものではありません。`-- --case=route-sf`のように1ケースだけ再実行できます。
