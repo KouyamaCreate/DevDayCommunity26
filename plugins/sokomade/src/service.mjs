@@ -387,7 +387,7 @@ export class MapService {
     }
     const report = await this.reportContext(places, scope === 'comparison' ? state.routes : [], state.conditions);
     invariant(this.sessions.get(workspaceId).contextGeneration === generation, 'STALE_RESULT', '新しい操作があるため集計を更新できませんでした。');
-    this.sessions.update(workspaceId, s => { s.focusReport = { ...report, target: structuredClone(s.focus) }; if (!s.routes.length || scope === 'comparison') s.report = report; s.busy = false; });
+    this.sessions.update(workspaceId, s => { s.focusReport = scope === 'comparison' ? null : { ...report, target: structuredClone(s.focus) }; if (!s.routes.length || scope === 'comparison') s.report = report; s.busy = false; });
     return this.view(workspaceId);
   }
   async remove({ workspaceId, placeId }) {

@@ -2,7 +2,7 @@ import { createElement, useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { createRoot } from 'react-dom/client';
 import 'leaflet/dist/leaflet.css';
-import { reportGrid } from './report-grid.mjs';
+import { areaColor, pointInspection } from './report-density.mjs';
 import { googleReportOverlay } from './report-overlay.mjs';
 import { candidateLetter } from './presentation.mjs';
 import { Plus, Minus, Crosshair, House, Briefcase, Bed } from '@phosphor-icons/react';
@@ -31,7 +31,7 @@ function labelOverlay(maps,map,position,element,dispose) {
   overlay.onRemove=()=>{element.remove();if(dispose)queueMicrotask(dispose);};
   overlay.setMap(map);return overlay;
 }
-export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, onFocus, bothPaths = false, layerVisible = true, onInspect }) {
+export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, onFocus, bothPaths = false, layerVisible = true, densityRadius = 250, densityOpacity = 1, inspecting = false, onInspect }) {
   const container = useRef(null);
   const engine = useRef(null);
   const overlays = useRef([]);
@@ -137,10 +137,19 @@ export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, o
         add(labelOverlay(e.maps,e.map,halfway,chip));
       }
     }
-    if (layerVisible) {
-      const cells = reportGrid(workspace.reportLayer);
-      if (e.type === 'google' && cells.length) add(googleReportOverlay(e.maps, e.map, cells));
-      else for (const cell of cells) add(L.rectangle([[cell.bounds.south, cell.bounds.west], [cell.bounds.north, cell.bounds.east]], { fillColor:cell.color,fillOpacity:cell.opacity,weight:0,interactive:false }).addTo(e.map));
+    if (layerVisible && workspace.reportLayer?.regions?.some(r=>r.city==='sf' && r.status==='available')) {
+      if (e.type === 'google') add(googleReportOverlay(e.maps,e.map,workspace.reportLayer.incidents || [],{radiusMeters:densityRadius,opacity:densityOpacity}));
+    }
+    if (layerVisible) for (const area of workspace.reportLayer?.areas || []) {
+      if (!area.geometry) continue;
+      const count=Object.values(area.counts).reduce((n,v)=>n+v,0);
+      const color=areaColor(count,densityOpacity);
+      const selectedArea=pointInspection(workspace)?.area?.area===area.area;
+      const style={fillColor:`rgb(${color.slice(0,3).join(',')})`,fillOpacity:color[3]/255,strokeColor:selectedArea?'#0969f5':'#bd9a60',strokeOpacity:selectedArea?1:.45,strokeWeight:selectedArea?2:1,clickable:false,zIndex:0};
+      if(e.type==='google') {
+        const polygons=area.geometry.type==='Polygon'?[area.geometry.coordinates]:area.geometry.coordinates;
+        for(const polygon of polygons) add(new e.maps.Polygon({map:e.map,paths:polygon.map(ring=>ring.map(([lng,lat])=>({lat,lng}))),...style}));
+      } else add(L.geoJSON({type:'Feature',properties:{},geometry:area.geometry},{interactive:false,style:{color:style.strokeColor,weight:style.strokeWeight,opacity:style.strokeOpacity,fillColor:style.fillColor,fillOpacity:style.fillOpacity}}).addTo(e.map));
     }
     if(workspace.focus.type==='point') {
       const p=workspace.focus.point;
@@ -148,6 +157,11 @@ export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, o
         add(new e.maps.Marker({map:e.map,position:p,icon:{path:e.maps.SymbolPath.CIRCLE,scale:7,fillColor:COLORS[0],fillOpacity:1,strokeColor:'#fff',strokeWeight:3},zIndex:30,title:'選んだ地点'}));
         const callout=document.createElement('div');callout.className='point-callout';
         const title=document.createElement('strong');title.textContent='選んだ地点';callout.append(title);
+        const inspection=pointInspection(workspace);
+        const detail=document.createElement('span');detail.className='point-report-count';detail.textContent=inspection?.label || (inspecting?'周辺の報告を集計中…':'周辺の報告を確認');callout.append(detail);
+        if(inspection?.report.period){const period=document.createElement('small');period.textContent=inspection.report.period.label;callout.append(period);}
+        const radius=inspection?.area?.radiusMeters;
+        if(radius) add(new e.maps.Circle({map:e.map,center:p,radius,strokeColor:'#ad7a25',strokeWeight:1,strokeOpacity:.7,fillColor:'#ffcf70',fillOpacity:.06,clickable:false,zIndex:1}));
         const button=document.createElement('button');button.textContent='ここについて調べる →';button.onclick=()=>onInspect?.();callout.append(button);
         add(labelOverlay(e.maps,e.map,p,callout));
       } else add(L.circleMarker([p.lat,p.lng],{radius:7,color:'#fff',weight:3,fillColor:COLORS[0],fillOpacity:1}).addTo(e.map).bindTooltip('選んだ地点'));
@@ -194,7 +208,7 @@ export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, o
         if (bounds.length === 1) e.maps.event.addListenerOnce(e.map, 'idle', () => { if (e.map.getZoom() > 16) e.map.setZoom(16); });
       } else e.map.fitBounds(bounds.map(p => [p.lat, p.lng]), {paddingTopLeft:[container.current.clientWidth>1000?620:container.current.clientWidth>700?500:50,65],paddingBottomRight:[70,container.current.clientWidth<=700?Math.min(container.current.clientHeight*.6,450):110],maxZoom:16});
     }
-  }, [workspace, ready, city.id, bothPaths, layerVisible]);
+  }, [workspace, ready, city.id, bothPaths, layerVisible, densityRadius, densityOpacity, inspecting]);
   const reportCity = workspace.reportLayer?.regions?.[0]?.city || workspace.report?.city;
   const zoom = value => { userInteraction.current = true; const e = engine.current; if (!e) return; if (e.type === 'google') e.map.setZoom(e.map.getZoom() + value); else e.map.setZoom(e.map.getZoom() + value); };
   const reset = () => {
@@ -204,5 +218,5 @@ export function MapCanvas({ workspace, browserKey, city, onSelect, onViewport, o
     if (e.type === 'google') { e.map.setCenter(city.center); e.map.setZoom(16); }
     else e.map.setView([workspace.mapView?.center.lat || city.center.lat, workspace.mapView?.center.lng || city.center.lng], workspace.mapView?.zoom || 16);
   };
-  return <div className="map-area"><div className="map-surface" ref={container} onPointerDown={() => { userInteraction.current = true; }} onWheel={() => { userInteraction.current = true; }} onKeyDown={() => { userInteraction.current = true; }} role="region" aria-busy={!ready && !error} aria-label={`表示中の地図。${workspace.leg === 'out' ? '行き' : '帰り'}を表示中`}/>{!ready && !error && <div className="map-loading" role="status">地図を読み込んでいます…</div>}{error && <div className="map-error" role="alert">{error}</div>}<div className="map-controls"><button aria-label="地図を拡大" onClick={() => zoom(1)}><Plus size={19}/></button><button aria-label="地図を縮小" onClick={() => zoom(-1)}><Minus size={19}/></button><button aria-label="地域全体を表示" onClick={reset}><Crosshair size={19}/></button></div><div className="map-caption">{reportCity === 'sf' ? '濃淡は約250m区画の公開位置の件数。無着色は安全を意味しません' : reportCity === 'shibuya' ? '報告情報は町丁目単位です。沿道の件数は比較しません' : '報告情報は取得した範囲だけ表示します'}</div></div>;
+  return <div className="map-area"><div className="map-surface" ref={container} onPointerDown={() => { userInteraction.current = true; }} onWheel={() => { userInteraction.current = true; }} onKeyDown={() => { userInteraction.current = true; }} role="region" aria-busy={!ready && !error} aria-label={`表示中の地図。${workspace.leg === 'out' ? '行き' : '帰り'}を表示中`}/>{!ready && !error && <div className="map-loading" role="status">地図を読み込んでいます…</div>}{error && <div className="map-error" role="alert">{error}</div>}<div className="map-controls"><button aria-label="地図を拡大" onClick={() => zoom(1)}><Plus size={19}/></button><button aria-label="地図を縮小" onClick={() => zoom(-1)}><Minus size={19}/></button><button aria-label="地域全体を表示" onClick={reset}><Crosshair size={19}/></button></div><div className="map-caption">{reportCity === 'sf' ? `濃淡は半径${densityRadius}mで平滑化した参考分布。色から件数や安全性は判断できません` : reportCity === 'shibuya' ? '町丁目全体の件数・境界：CODH / e-Stat 2020（加工、CC BY 4.0）。現在の集計区域との完全一致は未確認' : '報告情報は取得した範囲だけ表示します'}</div></div>;
 }

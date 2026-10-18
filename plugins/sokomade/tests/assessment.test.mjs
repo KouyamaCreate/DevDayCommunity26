@@ -38,11 +38,14 @@ test('Shibuya same neighborhood has same count; different neighborhoods never be
   assert.ok(a.items.every(i=>i.evidence.unit==='neighborhood'&&!i.evidence.canCompareCounts));
   assert.ok(a.proposal.reason.includes('順位付けはしていません'));
 });
-test('missing addresses, unsupported regions, stale and failed sources cannot become zero or safe recommendations',async t=>{
+test('unresolved neighborhoods, unsupported regions, stale and failed sources cannot become zero or safe recommendations',async t=>{
   const {service,id}=await setup(t,'shibuya');
   const original=service.google.search;
   service.google.search=async(...args)=>(await original(...args)).map(p=>({...p,address:''}));
   let w=(await service.discover({workspaceId:id,query:'カフェ'})).workspace;
+  assert.deepEqual(w.assessment.items.map(i=>i.evidence.count),[12,12,1]);
+  service.google.search=async(...args)=>(await original(...args)).map(p=>({...p,address:'',lat:35.670,lng:139.701}));
+  w=(await service.discover({workspaceId:id,query:'カフェ'})).workspace;
   assert.ok(w.assessment.items.every(i=>i.evidence.count===null&&i.evidence.status==='unknown'));
   assert.ok(w.assessment.items.every(i=>i.evidence.coverage==='unknown'));
   assert.equal(w.assessment.proposal.recommendedPlaceId,null);

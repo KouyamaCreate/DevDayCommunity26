@@ -17,7 +17,7 @@ test('SF time window uses complete local days; empty responses do not mean zero'
 });
 test('Tokyo uses specified category totals once, and never returns route counts',async()=>{
  const csv='市区町丁,総合計,粗暴犯暴行,粗暴犯傷害,凶悪犯強盗,侵入窃盗計,非侵入窃盗計\n渋谷区神南1丁目,100,2,3,4,5,6\n';
- const areas=parseTokyoCSV(Buffer.from(csv)); assert.deepEqual(areas[0].counts,{assault:5,robbery:4,theft:11});
+ const areas=parseTokyoCSV(Buffer.from(csv+'渋谷区計,1000,20,30,40,50,60\n')); assert.equal(areas.length,1); assert.deepEqual(areas[0].counts,{assault:5,robbery:4,theft:11});
  const reports=new Reports(); reports.tokyo=async()=>({areas,period:{label:'test'},fetchedAt:new Date().toISOString()});
  const result=await reports.context('shibuya',[{id:'p',address:'東京都渋谷区神南１丁目'}],[{id:'r'}]);
  assert.equal(result.comparable,false);assert.equal(result.routeCounts[0].count,null); assert.equal(result.areaCounts[0].count,20); assert.deepEqual(result.incidents,[]);

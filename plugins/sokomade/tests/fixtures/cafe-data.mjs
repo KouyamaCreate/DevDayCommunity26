@@ -9,7 +9,7 @@ export function cafeAdapters() {
   };
   const cafes = {
     sf:[['検証カフェSF A',37.775,-122.419,'SF A'],['検証カフェSF B',37.780,-122.419,'SF B'],['検証カフェSF C',37.785,-122.419,'SF C']],
-    shibuya:[['検証カフェ渋谷 A',35.661,139.701,'東京都渋谷区神南1丁目1-1'],['検証カフェ渋谷 B',35.665,139.701,'東京都渋谷区神南１丁目2-2'],['検証カフェ渋谷 C',35.670,139.701,'東京都渋谷区渋谷2丁目3-3']],
+    shibuya:[['検証カフェ渋谷 A',35.661,139.701,'東京都渋谷区神南1丁目1-1'],['検証カフェ渋谷 B',35.665,139.701,'東京都渋谷区神南１丁目2-2'],['検証カフェ渋谷 C',35.660,139.707,'東京都渋谷区渋谷2丁目3-3']],
   };
   const google = {
     async search(query,city,{limit=3}={}) { return cafes[city].slice(0,limit).map(([name,lat,lng,address])=>({id:randomUUID(),providerId:name,name,lat,lng,address,source:'validation-fixture',primaryType:'検証用カフェ',openingHours:{openNow:true},role:'search-result'})); },
