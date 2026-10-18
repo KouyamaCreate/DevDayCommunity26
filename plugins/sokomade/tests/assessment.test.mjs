@@ -132,3 +132,57 @@ test('agent discover tool receives actual evidence and map choice before composi
   assert.equal(data.workspace.assessment.items.length,3);assert.ok(data.workspace.assessment.items[0].evidence.sourceURL);
   assert.equal(data.workspace.selectedPlaceId,data.workspace.assessment.proposal.recommendedPlaceId);
 });
+
+test('analyze filter changes clear completed evidence and invalidate in-flight assessments',async t=>{
+  const {service,sessions,id}=await setup(t);
+  await service.discover({workspaceId:id,query:'カフェ'});
+  await service.analyze({workspaceId:id,categories:['theft'],scope:'viewport'});
+  assert.equal(sessions.snapshot(id).assessment,null);
+  await service.assess({workspaceId:id});
+  let release,entered;const gate=new Promise(r=>release=r),started=new Promise(r=>entered=r);
+  const original=service.reports.context.bind(service.reports);let pauseNext=true;
+  service.reports.context=async(...args)=>{if(pauseNext){pauseNext=false;entered();await gate;}return original(...args);};
+  const pending=service.assess({workspaceId:id});const rejected=assert.rejects(pending,{code:'STALE_RESULT'});
+  await started;
+  try {await service.analyze({workspaceId:id,categories:['robbery'],radiusMeters:100,scope:'viewport'});} finally {release();}
+  await rejected;
+  assert.equal(sessions.snapshot(id).assessment,null);
+  const fresh=(await service.assess({workspaceId:id})).workspace.assessment;
+  assert.deepEqual(fresh.conditions.categories,['robbery']);assert.equal(fresh.conditions.radiusMeters,100);
+});
+
+test('analyze without a filter change retains completed evidence',async t=>{
+  const {service,id}=await setup(t);
+  const before=(await service.discover({workspaceId:id,query:'カフェ'})).workspace.assessment;
+  await service.analyze({workspaceId:id,categories:before.conditions.categories,radiusMeters:before.conditions.radiusMeters,scope:'viewport'});
+  assert.deepEqual((await service.view(id)).workspace.assessment,before);
+});
+
+test('an older discover cannot assess newer search results or replace their map command',async t=>{
+  const {service,id}=await setup(t);
+  const search=service.search.bind(service);let release,entered;
+  const gate=new Promise(r=>release=r),started=new Promise(r=>entered=r);
+  service.search=async args=>{const result=await search(args);if(args.query==='old'){entered();await gate;}return result;};
+  const old=service.discover({workspaceId:id,query:'old',priority:'fewer-reports'});
+  await started;
+  const latest=(await service.discover({workspaceId:id,query:'new',priority:'nearby'})).workspace;
+  release();await assert.rejects(old,{code:'STALE_RESULT'});
+  const actual=(await service.view(id)).workspace;
+  assert.deepEqual(actual.assessment,latest.assessment);assert.deepEqual(actual.mapView.command,latest.mapView.command);
+});
+
+test('a cross-region route cannot erase evidence for supported places or local routes in the same assessment',async t=>{
+  const {service,id}=await setup(t);
+  const from=(await service.resolve({workspaceId:id,lat:37.775,lng:-122.419,label:'Local property',role:'property'})).candidates[0];
+  const local=(await service.resolve({workspaceId:id,lat:37.780,lng:-122.419,label:'Local work'})).candidates[0];
+  const other=(await service.resolve({workspaceId:id,lat:51.5,lng:-0.12,label:'Unsupported work'})).candidates[0];
+  const w=(await service.compare({workspaceId:id,pairs:[{fromId:from.id,toId:local.id,comparisonId:local.id},{fromId:from.id,toId:other.id,comparisonId:other.id}]})).workspace;
+  const assessment=(await service.assess({workspaceId:id,placeIds:[from.id],routeIds:w.routes.map(r=>r.id)})).workspace.assessment;
+  assert.equal(assessment.items.find(i=>i.targetId===from.id).evidence.status,'available');
+  for(const route of w.routes) {
+    const evidence=assessment.items.find(i=>i.targetId===route.id).evidence;
+    const supported=[route.fromId,route.toId].every(id=>[from.id,local.id].includes(id));
+    assert.equal(evidence.status==='available',supported);
+    if(!supported) assert.equal(evidence.count,null);
+  }
+});

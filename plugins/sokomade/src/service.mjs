@@ -168,8 +168,10 @@ export class MapService {
     return this.view(workspaceId);
   }
   async discover({ workspaceId, priority = 'balanced', maxExtraDistanceMeters = 300, ...search }) {
+    const generation = this.sessions.get(workspaceId).operationGeneration + 1;
     await this.search({ workspaceId, ...search });
     const state = this.sessions.get(workspaceId);
+    invariant(state.operationGeneration === generation, 'STALE_RESULT', '新しい操作を優先したため、以前の検索からの提案を反映しませんでした。');
     if (!state.searchResultIds.length) return this.view(workspaceId);
     return this.assess({ workspaceId, placeIds: [...state.searchResultIds], priority, maxExtraDistanceMeters, _showAll:true });
   }
@@ -192,10 +194,13 @@ export class MapService {
     const groups = new Map();
     for (const target of [...places,...routes]) {
       const city = target.kind === 'route' ? reportRegion(this.place(state,target.fromId)) : reportRegion(target);
-      if (!groups.has(city)) groups.set(city,[]);
-      groups.get(city).push(target);
+      const destinationCity = target.kind === 'route' ? reportRegion(this.place(state,target.toId)) : city;
+      // Cross-region routes must not make unrelated local places/routes unavailable.
+      const key = JSON.stringify([city,destinationCity]);
+      if (!groups.has(key)) groups.set(key,{city,targets:[]});
+      groups.get(key).targets.push(target);
     }
-    const items = (await Promise.all([...groups].map(async ([city,targets]) => {
+    const items = (await Promise.all([...groups.values()].map(async ({city,targets}) => {
       const points = targets.filter(t=>t.kind==='place');
       const paths = targets.filter(t=>t.kind==='route');
       const endpoints = paths.flatMap(r=>[this.place(state,r.fromId),this.place(state,r.toId)]);
@@ -353,8 +358,11 @@ export class MapService {
   async analyze({ workspaceId, categories, radiusMeters, scope = 'focus' }) {
     const state = this.sessions.get(workspaceId);
     if (categories || radiusMeters) {
-      this.sessions.update(workspaceId, s => { if (categories) s.conditions.categories = categories; if (radiusMeters) s.conditions.radiusMeters = radiusMeters; });
-      void this.layer({ workspaceId }).catch(() => {});
+      const changed = (categories && [...categories].sort().join(',') !== [...state.conditions.categories].sort().join(',')) || (radiusMeters !== undefined && radiusMeters !== state.conditions.radiusMeters);
+      if (changed) {
+        // Use the same invalidation and route recount as the explicit conditions action.
+        await this.conditions({workspaceId,...(categories ? {categories} : {}),...(radiusMeters !== undefined ? {radiusMeters} : {})});
+      } else void this.layer({ workspaceId }).catch(() => {});
     }
     if (scope === 'viewport' || (scope === 'focus' && state.focus.type === 'viewport')) {
       this.sessions.update(workspaceId, s => { s.focusReport = null; if (!s.routes.length) s.report = null; });

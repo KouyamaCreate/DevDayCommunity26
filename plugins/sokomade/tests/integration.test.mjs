@@ -70,6 +70,10 @@ test('HTTP cafe workflows serialize evidence and select the existing map for Shi
   assert.equal(w.assessment.items.length,3);assert.equal(w.selectedPlaceId,w.assessment.proposal.recommendedPlaceId);assert.ok(w.mapView.command.id);
   const p=(await post('assess',{workspaceId:id,placeIds:w.searchResultIds,priority:'nearby'})).workspace;
   assert.equal(p.assessment.proposal.priority,'nearby');assert.equal(p.assessment.items[0].evidence.unit,city==='sf'?'radius':'neighborhood');
+  const changed=(await post('analyze',{workspaceId:id,categories:['theft'],radiusMeters:100,scope:'viewport'})).workspace;
+  assert.equal(changed.assessment,null);
+  const fresh=(await post('assess',{workspaceId:id,placeIds:w.searchResultIds})).workspace;
+  assert.deepEqual(fresh.assessment.conditions.categories,['theft']);assert.equal(fresh.assessment.conditions.radiusMeters,100);
   await post('clear',{workspaceId:id});
  }
 });
