@@ -58,7 +58,7 @@ export async function startHTTP({ service, config, sessions, port = 0, chat }) {
       }
       if (request.method === 'POST' && url.pathname === '/api/action') {
         const { action, args } = await readBody(request);
-        const allowed = new Set(['open', 'resolve', 'search', 'select', 'plan', 'analyze', 'remove', 'clear', 'viewport', 'focus', 'move', 'conditions', 'compare', 'layer']);
+        const allowed = new Set(['open', 'resolve', 'search', 'select', 'plan', 'analyze', 'remove', 'clear', 'viewport', 'focus', 'move', 'conditions', 'compare', 'layer', 'discover', 'assess']);
         if (!allowed.has(action)) throw new AppError('INVALID_ACTION', 'この操作には対応していません。');
         // Use the exact same Zod contract for HTTP and MCP, without accepting arbitrary methods.
         const { validateAction } = await import('./validation.mjs');

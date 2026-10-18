@@ -9,6 +9,7 @@ import { createRuntime } from '../src/runtime.mjs';
 import { Config } from '../src/config.mjs';
 import { transform } from 'esbuild';
 import { UI_URI } from '../src/mcp.mjs';
+import { cafeAdapters } from './fixtures/cafe-data.mjs';
 
 test('HTTP rejects external origins, unknown methods, oversized input and missing auth',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'sokomade-http-'));const config=new Config({directory,env:{}});
@@ -44,13 +45,33 @@ test('installed-style bundled server works over STDIO with UI resource, and proc
   const client=new Client({name:'sokomade-test',version:'1.0.0'});await client.connect(transport);return client;
  };
  const client=await start();t.after(()=>client.close());
- const tools=await client.listTools();assert.equal(tools.tools.length,9);assert.ok(tools.tools.find(t=>t.name==='open_map')._meta.ui.resourceUri);
+ const tools=await client.listTools();assert.equal(tools.tools.length,14);assert.ok(tools.tools.find(t=>t.name==='discover_places'));assert.ok(tools.tools.find(t=>t.name==='assess_locations'));assert.ok(tools.tools.find(t=>t.name==='open_map')._meta.ui.resourceUri);
  const resource=await client.readResource({uri:UI_URI}); assert.equal(resource.contents[0].mimeType,'text/html;profile=mcp-app');assert.ok(resource.contents[0].text.includes('mode:"mcp"'));assert.ok(!resource.contents[0].text.includes('/*__BOOTSTRAP__*/'));
  const opened=await client.callTool({name:'open_map',arguments:{city:'sf'}});const id=opened.structuredContent.workspace.id;
  const result=await client.callTool({name:'resolve_location',arguments:{workspaceId:id,lat:37.78,lng:-122.42,role:'origin'}});assert.equal(result.structuredContent.workspace.places.length,1);
  assert.ok(result._meta.viewURL.startsWith('http://127.0.0.1:'));
+ const assessed=await client.callTool({name:'assess_locations',arguments:{workspaceId:id,placeIds:[result.structuredContent.workspace.places[0].id]}});
+ assert.equal(assessed.isError,undefined);assert.equal(assessed.structuredContent.workspace.assessment.items[0].evidence.count,null);assert.equal(assessed.structuredContent.workspace.assessment.proposal.recommendedPlaceId,null);
  await client.close();const restarted=await start();t.after(()=>restarted.close());
  const expired=await restarted.callTool({name:'get_map',arguments:{workspaceId:id}});assert.equal(expired.isError,true);assert.equal(expired.structuredContent.error.code,'SESSION_EXPIRED');
+});
+
+test('HTTP cafe workflows serialize evidence and select the existing map for Shibuya and SF',async t=>{
+ const config={env:{},keys:async()=>({}),status:async()=>({})};
+ const runtime=await createRuntime({config,...cafeAdapters()});t.after(()=>runtime.close());
+ const html=await(await fetch(runtime.http.baseURL)).text();const token=html.match(/"token":"([a-f0-9]+)"/)[1];
+ const post=async(action,args)=>{
+  const r=await fetch(`${runtime.http.baseURL}/api/action`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({action,args})});
+  assert.equal(r.status,200);return r.json();
+ };
+ for(const city of ['shibuya','sf']) {
+  const id=(await post('open',{city})).workspace.id;
+  const w=(await post('discover',{workspaceId:id,query:'カフェ'})).workspace;
+  assert.equal(w.assessment.items.length,3);assert.equal(w.selectedPlaceId,w.assessment.proposal.recommendedPlaceId);assert.ok(w.mapView.command.id);
+  const p=(await post('assess',{workspaceId:id,placeIds:w.searchResultIds,priority:'nearby'})).workspace;
+  assert.equal(p.assessment.proposal.priority,'nearby');assert.equal(p.assessment.items[0].evidence.unit,city==='sf'?'radius':'neighborhood');
+  await post('clear',{workspaceId:id});
+ }
 });
 
 test('self-contained UI scripts remain syntactically valid after HTML inlining',async()=>{
