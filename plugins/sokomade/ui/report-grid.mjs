@@ -2,7 +2,12 @@
 // No smoothing or per-viewport normalization; clipped edge cells are excluded.
 const LAT = 250 / 111320;
 const LNG = LAT / Math.cos(37.77 * Math.PI / 180);
-export const GRID_OPACITY = [.04, .08, .13, .20];
+export const GRID_STYLES = [
+  { color: '#ffe6a0', opacity: .12 },
+  { color: '#ffda78', opacity: .22 },
+  { color: '#ffca55', opacity: .34 },
+  { color: '#ffb936', opacity: .48 },
+];
 export const GRID_LABEL = '約250m区画内の公開位置の報告件数';
 export function reportGrid(layer) {
   if (!layer || !layer.regions?.some(r => r.city === 'sf' && r.status === 'available')) return [];
@@ -18,7 +23,10 @@ export function reportGrid(layer) {
     if (!groups.has(key)) groups.set(key,{id:key,bounds,count:0});
     groups.get(key).count += p.count;
   }
-  return [...groups.values()].map(cell => ({...cell,opacity:GRID_OPACITY[cell.count>=20?3:cell.count>=10?2:cell.count>=5?1:0]}));
+  return [...groups.values()].map(cell => {
+    const level = cell.count >= 20 ? 3 : cell.count >= 10 ? 2 : cell.count >= 5 ? 1 : 0;
+    return { ...cell, level, ...GRID_STYLES[level] };
+  });
 }
 export function layerMessage(layer) {
   if (!layer || layer.status === 'loading') return '公開報告を確認中';
