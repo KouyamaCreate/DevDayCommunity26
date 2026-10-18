@@ -5,6 +5,7 @@ import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from '@model
 import { z } from 'zod';
 import { publicError } from './errors.mjs';
 import { mapContext } from './chat.mjs';
+import { actionSchemas } from './validation.mjs';
 
 export const UI_URI = 'ui://sokomade/map.html';
 const workspaceId = z.string().uuid().describe('open_mapで取得した、この相談のworkspaceId');
@@ -69,5 +70,12 @@ export function createMCP({ service, config, localURL }) {
   }, args => service.analyze(args));
   tool('remove_location', '地点を比較から外す', 'この相談の地点と関連経路をメモリから削除する。', { workspaceId, placeId: z.string().uuid() }, args => service.remove(args), { openWorld: false });
   tool('close_map', '相談データを破棄', 'この相談の地点・住所・URL・比較結果をプラグインのメモリから即時破棄する。Codex自体の会話履歴を削除する機能ではない。', { workspaceId }, args => service.clear(args), { openWorld: false });
+  for (const [name,action,title,description,appOnly] of [
+    ['discover_places','discover','店と周辺情報を一緒に比較','カフェなどの店舗を検索し、各候補の公開報告・根拠付き提案を返して地図へ反映。出発地不要。balancedは比較可能なSFで最寄りから追加直線300m以内の候補の件数を比較。maxExtraDistanceMetersで変更可。渋谷は町丁目情報を添えて近さから提案。件数は安全順位ではない。',false],
+    ['assess_locations','assess','場所・物件・経路の根拠を比較','取得済みplaceIds/routeIdsを共通形式で評価。期間・精度・出典・欠損・比較可否を返す。渋谷の町丁目件数で安全順位を付けない。',false],
+    ['update_map_conditions','conditions','比較条件を変更','報告種別・集計半径・徒歩条件を変更。変更後の候補比較はassess_locationsを呼ぶ。',false],
+    ['move_map','move','地図を移動','地域・住所・取得済み地点へ移動し、既存の比較候補は保持する。',false],
+    ['compare_walks','compare','任意の端点の往復を比較','取得済み地点の組から向きごとの徒歩を比較する。物件から職場にも使用できる。',false],
+  ]) tool(name,title,description,actionSchemas[action].shape,args=>service[action](args),{appOnly});
   return server;
 }

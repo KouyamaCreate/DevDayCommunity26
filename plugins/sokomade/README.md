@@ -42,7 +42,7 @@ Google Mapsへの案内は実際の向きの両端点を渡した再検索です
 
 相談・履歴・条件はメモリだけに保持し、60分無操作・破棄・終了で削除します。受動的な状態ポーリングは期限を延長しません。127.0.0.1で待ち受け、プロセスごとのBearerトークン、Host/Origin検証、入力サイズ制限を使用します。公開サービス用のユーザー認証・マルチユーザー分離・配備は含みません。
 
-既存MCPは9ツールと同じ地図UIを保持しています。新しい汎用地図操作・任意端点比較の会話はWeb版が主対象です。プラグイン配布物を作る場合は`npm run package --prefix plugins/sokomade`で`build/sokomade-plugin/`へ生成します。生成物・ローカルインストール状態はPRに含めません。
+MCPは既存9ツールに5ツール（discover_places / assess_locations / update_map_conditions / move_map / compare_walks）を追加し、同じ地図UIを保持しています。新しい汎用地図操作・任意端点比較の会話はWeb版が主対象です。プラグイン配布物を作る場合は`npm run package --prefix plugins/sokomade`で`build/sokomade-plugin/`へ生成します。生成物・ローカルインストール状態はPRに含めません。
 
 検証コマンドと結果は[VALIDATION.md](./VALIDATION.md)を参照してください。
 
@@ -57,3 +57,26 @@ SFの分布は、匿名化された公開位置の重みを半径250m（500mへ�
 渋谷は町丁目全体の認知件数を実際の参考ポリゴンで色分けし、300件以上は同じ色です。面積・人口で補正した値ではありません。2020年の参考境界と現在の住所/集計区域との完全一致は未確認です。出典とCC BY 4.0クレジットを表示条件に明記しています。未対応の名称や報告のない町丁目は着色しません。境界内に事件の点や滑らかな分布を作りません。
 
 境界データは`data/shibuya-2020.json`。出典・取得日・元ファイルのSHA-256を含み、`node scripts/update-shibuya-boundaries.mjs`で再生成できます。クレジットと制約は同ディレクトリのREADMEを参照してください。
+
+## 共通の根拠付き比較
+
+`discover`は店舗検索から候補全件の`assess`までを実行し、`workspace.assessment`に結果を保持します。`assess`の対象は取得済み`placeIds`（店舗・物件・住所）、`routeIds`（向きを持つ徒歩経路）。結果は画面へ送る状態とエージェントが読む文脈の両方に含まれます。
+
+- 各対象：期間・種別・範囲・精度・出典・更新/取得日時・状態・比較可否。未取得はnull、古い/範囲が欠ける情報は明示します。
+- SF：同じ条件の公開報告と直線距離を比較。balancedは最寄り候補からの直線距離の追加がmaxExtraDistanceMeters（既定300m）以内の候補の中で公開報告が少ない候補（同数なら近さ）、fewer-reportsは公開報告件数が少ない候補（同数なら近さ）、nearbyは近さを優先します。危険度を推定する処理ではありません。
+- 渋谷：同じ町丁目の候補は同じ集計値。町丁目間の面積・人口の違いを補正できないので件数で安全順位を付けず、取得できた地域情報を添えて近さから提案します。
+- 情報不足・古いデータ・一部範囲外・営業時間外の候補は提案の選択対象から外し、取得結果には残します。営業時間不明は明示して残します。
+- 経路は同じ根拠形式で返します。経路だけのassessは自動選択をせず、時間・向き・沿道情報をエージェントへ渡します。
+
+UIは既存のままです。会話またはMCPから使い、参考候補は既存の選択・マーカーへ反映します。WebのHTTP操作は`POST /api/action`の`discover` / `assess`、MCPでは`discover_places` / `assess_locations`です。詳しい入力と状態は[仕様](../../docs/spec.md)を参照してください。
+
+```sh
+# 通常テストは外部APIを使いません
+npm run check --prefix plugins/sokomade
+# 以下は明示的な実API検証。従量料金が発生します
+npm run test:cafes:agent --prefix plugins/sokomade # OpenAI実接続、店舗・報告は検証用サンプル
+npm run test:cafes:live --prefix plugins/sokomade  # Google・OpenAI・公開報告を実接続
+npm run test:consultations:live --prefix plugins/sokomade # SF・渋谷のカフェ/経路/物件、計6相談を実接続
+```
+
+`test:consultations:live`は自然言語の依頼から実エージェントを動かし、候補・向き付き徒歩経路・物件住所に対する共通評価と、回答中の件数・期間・出典を確認します。公開報告はディスクキャッシュを使わず取得し、物件ケースは公開施設の住所を仮の検討住所として使います。取得時点の全ケース成功を保証するものではありません。`-- --case=route-sf`のように1ケースだけ再実行できます。

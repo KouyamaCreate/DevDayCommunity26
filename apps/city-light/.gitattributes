@@ -1,0 +1,5 @@
+# Retain the official CP932/CRLF source bytes used by the provenance hashes.
+data/open-data/crime-2025.csv binary
+# Keep cached/generated datasets collapsed during code review.
+data/** linguist-generated=true
+public/data/** linguist-generated=true

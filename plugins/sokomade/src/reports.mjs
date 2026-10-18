@@ -161,6 +161,7 @@ export class Reports {
       coverage: 'not-verified', limitations: [...REPORT_LIMITS, '地図全域のデータ網羅性は確認できません。情報がない場所を安全とは扱いません。', '渋谷は町丁目全体の集計です。2020年の参考境界と集計区域の完全一致は未確認で、表示範囲内合計や沿道件数へ変換しません。'] };
   }
   async context(city, places, routes, { categories = ['assault', 'robbery', 'theft'], radiusMeters = 500 } = {}) {
+    categories = [...new Set(categories)];
     if (!categories.length || categories.some(c => !(c in REPORT_CATEGORIES))) throw new AppError('INVALID_CATEGORIES', '対象種別を選んでください。');
     if (city === 'sf') {
       const source = await this.sf();

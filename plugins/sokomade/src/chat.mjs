@@ -4,6 +4,8 @@ import { actionSchemas, validateAction } from './validation.mjs';
 import { AppError, publicError, invariant } from './errors.mjs';
 
 const ACTIONS = {
+  discover: ['店舗と周辺の公開報告を比較しています', '治安情報も考慮して店・カフェを探す依頼にはこれを使う。店舗検索→全候補の周辺情報→根拠付き提案→地図選択を一度に実行。priority=balancedは同条件の公開報告と直線距離、fewer-reportsは公開報告の少なさ、nearbyは近さを優先。渋谷の町丁目件数は安全順位に使わない。出発地は不要。'],
+  assess: ['候補の比較根拠を確認しています', '取得済みの店舗・物件placeIds、または経路routeIdsを共通形式で評価。省略時は直近の検索候補。assessmentのitems.evidenceに出典・期間・精度・欠損・比較可否、proposalに理由が返る。経路は取得済みのものだけ。'],
   resolve: ['住所・物件を確認しています', 'ユーザー指定の住所・店名・公開物件URLを追加する。role=originは出発地、propertyは物件。fromFocus=trueは地図で選んだpointを地点として追加する（座標はサーバーが取得）。複数候補は確認してからselectする。'],
   search: ['近くの候補を探しています', '現在の注目地点/表示範囲周辺の店舗を検索する。出発地は不要。scope=viewportは表示範囲中心、originは明示された出発地。選択・物件・経路の比較候補は保持する。limitは通常3件。'],
   select: ['地図の選択を更新しています', '取得済みのplaceId/routeIdで地点・経路・行き帰りを選択する。出発地を選ぶときはrole=origin。'],
@@ -23,6 +25,12 @@ const INSTRUCTIONS = `あなたは「そこまで行って大丈夫？」の地�
 出発地など必須の条件が不足すれば1つの短い質問をします。取得した住所が複数候補なら勝手に決めません。
 「この辺」は最新mapView.bounds、「ここ」はfocus（point/place/viewport）、「この候補」はselectedPlaceIdを参照します。周辺分析の結果はfocusReport、表示範囲はreportLayer、経路比較の集計はreportにあります。地図の中心・注目地点と徒歩のoriginIdは別です。ID、店名、住所、経路、時間、件数を作りません。
 店舗を探すだけならsearchのみ。徒歩経路も依頼された場合だけ出発地を確認してplan/compareを実行します。物件・地点はresolveで保持し、追加検索で消しません。
+「安全な場所のカフェ」「治安も考慮して店を提案」など両方の情報が必要ならdiscoverを使います。店舗を並べるだけで終わりません。取得済み候補の相談ではassessを使います。物件もplaceIds、経路もrouteIdsで同じ根拠形式を利用できます。
+物件の周辺相談はresolveで住所を確定してから、そのplaceIdを指定してassessします。治安情報も使う経路相談はplan/compareで実経路を取得後、取得した全候補のrouteIdsをassessへ渡します。analyzeだけで候補・物件・経路の共通評価を省略しません。地図の注目地点や表示範囲だけの相談には引き続きanalyze/layerを使います。
+assessment.itemsのevidenceとproposal.reasonに基づいて、提案先・選んだ理由・代替候補との違いを説明します。件数を説明するときは期間・種別・範囲を必ず添え、statusがunknown/unavailable/partial/staleならその理由を伝えます。情報不足の候補を安全扱いしません。priorityの指定がなければbalancedを使います。
+balancedは最も近い候補からの直線距離の追加がmaxExtraDistanceMeters以内（既定300m）の候補に絞り、その中で公開報告が少ない候補を選びます。この距離条件を提案理由に添えます。徒歩の遠回り時間へ変換しません。希望があればmaxExtraDistanceMetersを指定し直してassessします。
+この追加距離の上限を適用するのはSF等でproposal.comparable=trueの場合だけです。proposal.maxExtraDistanceMeters=nullなら追加距離の上限は適用していません。渋谷の距離からの提案に300mの絞り込みを行ったと説明しません。候補比較の出典はitems.evidenceのsourceNameとsourceURLを回答へ添えます。
+SFの比較は同一の期間・種別・半径の公開報告と直線距離による参考比較です。人口や人通りを補正した危険度ではありません。渋谷の町丁目が違う店は件数で順位付けせず、地域の事実を添えて距離等の条件で提案します。同じ町丁目なら同じ情報なので差を作りません。proposal.basisがdistance-with-area-contextなら治安の優劣で選んだと説明しません。
 条件変更はconditionsで保存します。往復上限はwalkEvaluationsの秒単位の判定を使い、unknownは未取得、exceedsは条件外として説明します。表示の分を合算して判定しません。取得済み代替経路が新しい遠回り条件を満たさない場合は再plan/compareしてください。滞在時間は別です。
 予算は取得できた価格帯で扱い、メニューの具体的な金額を推測しません。営業時間は取得時点だけで、帰る時刻の営業は推定しません。
 物件は渡された住所/URLのみ。空き物件を網羅検索しません。URL読取不能なら住所を尋ねます。通勤比較はcompareで物件→勤務先（往路）、勤務先→物件（復路）の向きを保ちます。徒歩以外の時刻表・配車は外部サービスへ案内します。

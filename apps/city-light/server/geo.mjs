@@ -1,0 +1,3 @@
+export const CENTER={lat:35.658034,lng:139.701636};
+export function distance(lat,lng){const r=Math.PI/180,a=(lat-CENTER.lat)*r,b=(lng-CENTER.lng)*r;return 12742000*Math.asin(Math.min(1,Math.sqrt(Math.sin(a/2)**2+Math.cos(CENTER.lat*r)*Math.cos(lat*r)*Math.sin(b/2)**2)));}
+export const labels={restaurant:'飲食店',cafe:'カフェ',convenience_store:'コンビニ',bar_izakaya:'バー・居酒屋',medical:'医療施設',pharmacy:'薬局',hospital:'病院',clinic:'クリニック',police:'警察施設',education:'教育',service_other:'サービス',unknown:'分類不明',public_facility:'公共施設',lodging:'宿泊施設',retail_other:'小売店',beauty_salon:'美容',finance:'金融機関',grocery:'食品店',tourism:'観光',fast_food:'ファストフード',bakery:'ベーカリー'};

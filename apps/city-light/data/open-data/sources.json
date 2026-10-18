@@ -1,0 +1,48 @@
+{
+  "fetchedAt": "2026-10-18T07:48:55.443031+00:00",
+  "periodStart": "2025-01-01",
+  "periodEnd": "2025-12-31",
+  "crimePage": "https://www.keishicho.metro.tokyo.lg.jp/about_mpd/jokyo_tokei/jokyo/ninchikensu.html",
+  "crimeCatalog": "https://catalog.data.metro.tokyo.lg.jp/dataset/t000022d0000100001",
+  "boundaryPage": "https://geoshape.ex.nii.ac.jp/ka/",
+  "boundaryTerms": "https://www.e-stat.go.jp/terms-of-use",
+  "boundaryYear": 2020,
+  "sources": [
+    {
+      "url": "https://www.keishicho.metro.tokyo.lg.jp/about_mpd/jokyo_tokei/jokyo/ninchikensu.files/R7.csv",
+      "file": "crime-2025.csv",
+      "title": "令和7年 区市町村の町丁別、罪種別及び手口別認知件数（年計）",
+      "license": "CC BY（東京都オープンデータカタログ）",
+      "attribution": "警視庁「区市町村の町丁別、罪種別及び手口別認知件数」令和7年を加工",
+      "sha256": "49594b704e4c34b3b7114910f3538718bf17e93ae258729bd09cf2bfb169cbd5",
+      "sizeBytes": 502545
+    },
+    {
+      "url": "https://geoshape.ex.nii.ac.jp/ka/topojson/2020/13/r2ka13113.topojson",
+      "file": "towns-13113.topojson",
+      "title": "国勢調査町丁・字等別境界データセット（2020）",
+      "license": "CC BY 4.0 / e-Stat利用規約",
+      "attribution": "『国勢調査町丁・字等別境界データセット』（CODH作成）「令和2年国勢調査町丁・字等別境界データ」（e-Stat）を加工 doi:10.20676/00000450",
+      "sha256": "5e9072b63f0a371da2269a73b8ae69c883ba7dfafd233c9d18bb1c613d62fb3e",
+      "sizeBytes": 131870
+    },
+    {
+      "url": "https://geoshape.ex.nii.ac.jp/ka/topojson/2020/13/r2ka13103.topojson",
+      "file": "towns-13103.topojson",
+      "title": "国勢調査町丁・字等別境界データセット（2020）",
+      "license": "CC BY 4.0 / e-Stat利用規約",
+      "attribution": "『国勢調査町丁・字等別境界データセット』（CODH作成）「令和2年国勢調査町丁・字等別境界データ」（e-Stat）を加工 doi:10.20676/00000450",
+      "sha256": "d1b8a663b71f38ebf35364777deca1f730891e7a2a6987b77fccf8aa6be3b506",
+      "sizeBytes": 220583
+    },
+    {
+      "url": "https://geoshape.ex.nii.ac.jp/ka/topojson/2020/13/r2ka13110.topojson",
+      "file": "towns-13110.topojson",
+      "title": "国勢調査町丁・字等別境界データセット（2020）",
+      "license": "CC BY 4.0 / e-Stat利用規約",
+      "attribution": "『国勢調査町丁・字等別境界データセット』（CODH作成）「令和2年国勢調査町丁・字等別境界データ」（e-Stat）を加工 doi:10.20676/00000450",
+      "sha256": "4aa41e8bca37cc2189f23157d20d1d716d8bf097b35fff433735736e2283af41",
+      "sizeBytes": 134843
+    }
+  ]
+}
