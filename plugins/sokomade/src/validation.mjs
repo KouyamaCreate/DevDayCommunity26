@@ -4,7 +4,11 @@ const workspaceId = z.string().uuid();
 const bounds = z.object({ south: z.number().min(-85).max(85), north: z.number().min(-85).max(85), west: z.number().min(-180).max(180), east: z.number().min(-180).max(180) }).strict();
 const point = z.object({ lat: z.number().min(-85).max(85), lng: z.number().min(-180).max(180) }).strict();
 const categories = z.array(z.enum(['assault','robbery','theft'])).min(1).max(3);
+const priority = z.enum(['balanced','fewer-reports','nearby']).default('balanced');
+const extraDistance = z.number().int().min(0).max(2000).default(300);
 export const actionSchemas = {
+  discover: z.object({ workspaceId, query:z.string().min(1).max(300).default('カフェ'), radiusMeters:z.number().int().min(100).max(10000).default(2000), scope:z.enum(['focus','viewport','origin']).default('focus'), limit:z.number().int().min(1).max(5).default(3), openNow:z.boolean().default(false), priority, maxExtraDistanceMeters:extraDistance }).strict(),
+  assess: z.object({ workspaceId, placeIds:z.array(z.string().uuid()).max(20).optional(), routeIds:z.array(z.string().uuid()).max(20).optional(), priority, maxExtraDistanceMeters:extraDistance }).strict(),
   open: z.object({ city: z.enum(['shibuya', 'sf']).default('shibuya') }).strict(),
   resolve: z.object({ workspaceId, fromFocus: z.boolean().optional(), query: z.string().min(1).max(2000).optional(), label: z.string().max(150).optional(), address: z.string().max(500).optional(), lat: z.number().min(-90).max(90).optional(), lng: z.number().min(-180).max(180).optional(), role: z.enum(['origin', 'candidate', 'property']).default('candidate') }).strict(),
   search: z.object({ workspaceId, query: z.string().min(1).max(300), radiusMeters: z.number().int().min(100).max(10000).default(2000), scope: z.enum(['focus','viewport','origin']).default('focus'), limit: z.number().int().min(1).max(5).default(5), openNow: z.boolean().default(false), priceLevels: z.array(z.enum(['PRICE_LEVEL_FREE','PRICE_LEVEL_INEXPENSIVE','PRICE_LEVEL_MODERATE','PRICE_LEVEL_EXPENSIVE','PRICE_LEVEL_VERY_EXPENSIVE'])).max(5).optional() }).strict(),

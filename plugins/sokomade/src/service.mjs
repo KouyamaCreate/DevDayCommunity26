@@ -3,6 +3,7 @@ import { AppError, invariant } from './errors.mjs';
 import { CITIES, validateWorldCoordinate, validateBounds, boundsAround, reportRegion, inBounds } from './spatial.mjs';
 import { evaluateWalks } from './conditions.mjs';
 import { fetchPropertyHTML, extractListingAddress } from './network.mjs';
+import { assessTarget, compareEvidence } from './assessment.mjs';
 
 export class MapService {
   constructor({ sessions, google, reports, config, propertyFetch = fetchPropertyHTML }) {
@@ -28,8 +29,9 @@ export class MapService {
   }
   pin(state, ids) { state.comparisonIds = [...new Set([...state.comparisonIds, ...ids])]; }
   invalidate(state, { routes = false, external = false } = {}) {
+    state.assessmentGeneration = (state.assessmentGeneration || 0) + 1;
     state.operationGeneration++; state.contextGeneration++; state.busy = false; state.focusReport = null;
-    if (routes) { state.routes = []; state.routePairs = []; state.activePairId = null; state.selectedRoutes = {}; state.report = null; }
+    if (routes) { state.routes = []; state.routePairs = []; state.activePairId = null; state.selectedRoutes = {}; state.report = null; state.assessment = null; }
     if (external) state.chatController?.abort();
   }
   async open({ city = 'shibuya' } = {}) {
@@ -130,6 +132,7 @@ export class MapService {
     invariant(this.sessions.get(workspaceId).operationGeneration === generation, 'STALE_RESULT', '新しい操作を優先しました。');
     this.sessions.update(workspaceId, current => {
       // Preserve identifiers already referenced by a route or comparison.
+      current.assessment = null;
       places = places.map(p => ({ ...p, id: current.places.find(old => p.providerId && old.providerId === p.providerId)?.id || p.id, role }));
       const additions = places.filter(p => !current.places.some(old => old.id === p.id));
       invariant(current.places.length + additions.length <= 20, 'TOO_MANY_PLACES', '比較地点は20件までです。不要な地点を除いてください。');
@@ -155,10 +158,82 @@ export class MapService {
       const results = places.map(p => ({ ...p, id: retained.find(old => p.providerId && old.providerId === p.providerId)?.id || p.id, role: 'search-result' }));
       const additions = results.filter((p, i) => !retained.some(old => old.id === p.id) && results.findIndex(other => other.id === p.id) === i);
       invariant(retained.length + additions.length <= 20, 'TOO_MANY_PLACES', '比較地点は20件までです。不要な地点を除いてください。');
-      current.places = [...retained, ...additions]; current.searchResultIds = [...new Set(results.map(p => p.id))];
+      const movedIds = new Set(retained.filter(old => results.some(p => p.id === old.id && (p.lat !== old.lat || p.lng !== old.lng))).map(p => p.id));
+      const removedRoutes = current.routes.some(r => movedIds.has(r.fromId) || movedIds.has(r.toId));
+      if (movedIds.size) {
+        current.routes = current.routes.filter(r => !movedIds.has(r.fromId) && !movedIds.has(r.toId));
+        current.routePairs = current.routePairs.filter(p => !movedIds.has(p.fromId) && !movedIds.has(p.toId));
+        current.selectedRoutes = Object.fromEntries(Object.entries(current.selectedRoutes).filter(([, id]) => current.routes.some(r => r.id === id)));
+        current.report = null;
+      }
+      current.places = [...retained.map(old => { const fresh = results.find(p=>p.id===old.id); return fresh ? { ...old, ...fresh, role: old.role } : old; }), ...additions]; current.searchResultIds = [...new Set(results.map(p => p.id))];
+      current.assessment = null;
+      current.searchContext = { query, center: {lat:center.lat,lng:center.lng}, radiusMeters, openNow, fetchedAt: new Date().toISOString() };
       current.selectedPlaceId = results[0]?.id || current.selectedPlaceId;
       if (results.length) current.focus = { type: 'place', placeId: results[0].id };
+      if (movedIds.size) current.activePairId = current.routePairs.find(p => p.comparisonId === current.selectedPlaceId)?.id || null;
       current.notices = results.length ? [] : ['条件に合う候補が見つかりません。検索範囲や条件を変えてください。'];
+      if (removedRoutes) current.notices.push('地点の位置情報が更新されたため、その地点を通る経路を破棄しました。経路を再取得してください。');
+    });
+    return this.view(workspaceId);
+  }
+  async discover({ workspaceId, priority = 'balanced', maxExtraDistanceMeters = 300, ...search }) {
+    const before = this.sessions.get(workspaceId);
+    const generation = before.operationGeneration + 1, assessmentGeneration = (before.assessmentGeneration || 0) + 1;
+    await this.search({ workspaceId, ...search });
+    const state = this.sessions.get(workspaceId);
+    invariant(state.operationGeneration === generation && state.assessmentGeneration === assessmentGeneration, 'STALE_RESULT', '新しい操作を優先したため、以前の検索からの提案を反映しませんでした。');
+    if (!state.searchResultIds.length) return this.view(workspaceId);
+    return this.assess({ workspaceId, placeIds: [...state.searchResultIds], priority, maxExtraDistanceMeters, _showAll:true });
+  }
+  async assess({ workspaceId, placeIds, routeIds = [], priority = 'balanced', maxExtraDistanceMeters = 300, _showAll = false }) {
+    const state = this.sessions.get(workspaceId);
+    const ids = [...new Set(placeIds || (routeIds.length ? [] : state.searchResultIds.length ? state.searchResultIds : state.selectedPlaceId ? [state.selectedPlaceId] : []))];
+    const places = ids.map(id => ({...this.place(state,id), kind:'place'}));
+    const routes = [...new Set(routeIds)].map(id => {
+      const r = state.routes.find(r=>r.id===id);
+      invariant(r, 'ROUTE_NOT_FOUND', 'この相談で取得した経路を指定してください。');
+      return {...r, kind:'route', name:`${this.place(state,r.fromId).name} → ${this.place(state,r.toId).name}`};
+    });
+    invariant(places.length + routes.length > 0, 'TARGET_REQUIRED', '比較する店舗・物件・経路を指定してください。');
+    invariant(places.length <= 20 && routes.length <= 20, 'TOO_MANY_TARGETS', '比較対象が多すぎます。');
+    const operation = state.operationGeneration, generation = (state.assessmentGeneration || 0) + 1;
+    state.assessmentGeneration = generation;
+    const conditions = structuredClone(state.conditions);
+    const useSearch = places.length && ids.every(id=>state.searchResultIds.includes(id));
+    const center = structuredClone(useSearch && state.searchContext ? state.searchContext.center : state.mapView.center);
+    const groups = new Map();
+    for (const target of [...places,...routes]) {
+      const city = target.kind === 'route' ? reportRegion(this.place(state,target.fromId)) : reportRegion(target);
+      const destinationCity = target.kind === 'route' ? reportRegion(this.place(state,target.toId)) : city;
+      // Cross-region routes must not make unrelated local places/routes unavailable.
+      const key = JSON.stringify([city,destinationCity]);
+      if (!groups.has(key)) groups.set(key,{city,targets:[]});
+      groups.get(key).targets.push(target);
+    }
+    const items = (await Promise.all([...groups.values()].map(async ({city,targets}) => {
+      const points = targets.filter(t=>t.kind==='place');
+      const paths = targets.filter(t=>t.kind==='route');
+      const endpoints = paths.flatMap(r=>[this.place(state,r.fromId),this.place(state,r.toId)]);
+      const report = city ? await this.reportContext([...points,...endpoints],paths,conditions) : this.unavailableReport(new AppError('REPORT_UNSUPPORTED','この地域の公開報告は未対応です。'));
+      return targets.map(target=>assessTarget({target,report,city,conditions,center}));
+    }))).flat();
+    const current = this.sessions.get(workspaceId, {touch:false});
+    invariant(current.assessmentGeneration === generation && current.operationGeneration === operation, 'STALE_RESULT', '新しい操作を優先したため、比較結果を更新しませんでした。');
+    invariant(routes.every(route=>current.routes.some(r=>r.id===route.id)), 'STALE_RESULT', '経路が更新されたため、古い経路の比較を反映しませんでした。');
+    const assessment = { items, proposal: compareEvidence(items,{priority,maxExtraDistanceMeters}), conditions, center,
+      search: useSearch ? structuredClone(state.searchContext) : null, createdAt:new Date().toISOString() };
+    this.sessions.update(workspaceId, s => {
+      s.assessment = assessment;
+      const chosen = assessment.proposal.recommendedPlaceId;
+      if (chosen) { s.selectedPlaceId=chosen; s.focus={type:'place',placeId:chosen}; s.activePairId=s.routePairs.find(p=>p.comparisonId===chosen)?.id || null; }
+      if (_showAll && places.length) {
+        // Reuse the existing camera protocol so all discovered candidates are visible.
+        const extent = Math.max(300, ...assessment.items.filter(i=>i.kind==='place').map(i=>i.distanceMeters));
+        const zoom = Math.max(3,Math.min(16,Math.floor(Math.log2(156543.03392*Math.cos(center.lat*Math.PI/180)*180/(2*extent)))));
+        const command = {id:(s.mapView.command?.id || 0)+1,center,zoom};
+        s.mapView={...s.mapView,center,zoom,bounds:boundsAround(center,extent),revision:s.mapView.revision+1,command};
+      }
     });
     return this.view(workspaceId);
   }
@@ -195,8 +270,10 @@ export class MapService {
   }
   async conditions({ workspaceId, resetRoundTripLimit, ...changes }) {
     if (resetRoundTripLimit) changes.maxRoundTripMinutes = null;
+    if (changes.categories) changes.categories = [...new Set(changes.categories)];
     this.sessions.update(workspaceId, s => {
       s.conditions = { ...s.conditions, ...changes };
+      s.assessment = null;
       this.invalidate(s);
       // Keep returned alternatives for re-evaluation, but never leave an over-limit selection active.
       for (const pair of s.routePairs) for (const leg of ['out', 'back']) {
@@ -232,7 +309,7 @@ export class MapService {
     invariant(new Set(routePairs.map(p => p.comparisonId)).size === routePairs.length, 'ROUTE_MISMATCH', '同じ比較対象に複数の経路の組は指定できません。');
     const generation = state.contextGeneration + 1;
     const maxDetourMinutes = state.conditions.maxDetourMinutes;
-    this.sessions.update(workspaceId, s => { s.contextGeneration = generation; s.busy = true; s.notices = []; });
+    this.sessions.update(workspaceId, s => { s.contextGeneration = generation; s.busy = true; s.notices = []; if (s.assessment?.items.some(i=>i.kind==='route')) s.assessment=null; s.assessmentGeneration++; });
     const isCurrent = () => this.sessions.get(workspaceId).contextGeneration === generation;
     try {
       const results = await Promise.all(routePairs.flatMap(pair => ['out', 'back'].map(async leg => {
@@ -293,8 +370,11 @@ export class MapService {
   async analyze({ workspaceId, categories, radiusMeters, scope = 'focus' }) {
     const state = this.sessions.get(workspaceId);
     if (categories || radiusMeters) {
-      this.sessions.update(workspaceId, s => { if (categories) s.conditions.categories = categories; if (radiusMeters) s.conditions.radiusMeters = radiusMeters; });
-      void this.layer({ workspaceId }).catch(() => {});
+      const changed = (categories && [...categories].sort().join(',') !== [...state.conditions.categories].sort().join(',')) || (radiusMeters !== undefined && radiusMeters !== state.conditions.radiusMeters);
+      if (changed) {
+        // Use the same invalidation and route recount as the explicit conditions action.
+        await this.conditions({workspaceId,...(categories ? {categories} : {}),...(radiusMeters !== undefined ? {radiusMeters} : {})});
+      } else void this.layer({ workspaceId }).catch(() => {});
     }
     if (scope === 'viewport' || (scope === 'focus' && state.focus.type === 'viewport')) {
       this.sessions.update(workspaceId, s => { s.focusReport = null; if (!s.routes.length) s.report = null; });
@@ -313,6 +393,7 @@ export class MapService {
   async remove({ workspaceId, placeId }) {
     const state = this.sessions.get(workspaceId); this.place(state, placeId);
     this.sessions.update(workspaceId, s => {
+      s.assessment = null;
       s.places = s.places.filter(p => p.id !== placeId); s.routes = s.routes.filter(r => r.fromId !== placeId && r.toId !== placeId);
       s.routePairs = s.routePairs.filter(p => p.fromId !== placeId && p.toId !== placeId);
       s.comparisonIds = s.comparisonIds.filter(id => id !== placeId); s.searchResultIds = s.searchResultIds.filter(id => id !== placeId);
