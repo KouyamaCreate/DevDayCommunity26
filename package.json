@@ -3,7 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "check:cloud": "node scripts/check-cloud.cjs"
+    "check:cloud": "node scripts/check-cloud.cjs",
+    "start": "node plugins/sokomade/dist/preview.mjs",
+    "build": "npm run build --prefix plugins/sokomade",
+    "test": "npm test --prefix plugins/sokomade"
   },
   "dependencies": {
     "picocolors": "1.1.1"

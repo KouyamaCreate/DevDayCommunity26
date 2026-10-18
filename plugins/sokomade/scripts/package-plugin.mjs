@@ -1,0 +1,17 @@
+import { mkdir, copyFile, cp, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+const root = resolve(import.meta.dirname, '..');
+const destination = resolve(root, '../../build/sokomade-plugin');
+await mkdir(`${destination}/dist`, { recursive: true });
+await mkdir(`${destination}/.codex-plugin`, { recursive: true });
+for (const name of ['server.mjs', 'preview.mjs', 'ui.html']) await copyFile(`${root}/dist/${name}`, `${destination}/dist/${name}`);
+await cp(`${root}/skills`, `${destination}/skills`, { recursive: true });
+const identity = { name: 'sokomade', version: '0.1.0', description: '渋谷・SFの地図、徒歩の往復、公開報告情報を会話で比較する。' };
+const display = { displayName: 'そこまで行って大丈夫？', shortDescription: '地図と公開報告を見ながら、行き先と道を選ぶ', category: 'Productivity', brandColor: '#0969f5', defaultPrompt: ['渋谷で行き先と徒歩の往復を比較したい', 'SFの候補物件と通勤の徒歩経路を比較したい'] };
+const connection = { command: process.execPath, args: ['${PLUGIN_ROOT}/dist/server.mjs'] };
+const save = (name, value) => writeFile(`${destination}/${name}`, `${JSON.stringify(value, null, 2)}\n`);
+await save('plugin.json', { $schema: 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json', ...identity, extensions: { 'com.openai': { interface: display } } });
+await save('mcp.json', { $schema: 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json', mcpServers: { map: { type: 'stdio', ...connection } } });
+await save('.codex-plugin/plugin.json', { ...identity, skills: './skills/', mcpServers: './.mcp.json', interface: display });
+await save('.mcp.json', { mcpServers: { map: connection } });
+console.log(`Packaged local plugin: ${destination}`);
